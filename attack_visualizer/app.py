@@ -1,8 +1,9 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import sys
 import os
 import uuid
+import hashlib
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -12,44 +13,33 @@ from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Simulation State
+# State Management
 STATE = {
     "arda": None,
     "burak": None,
-    "mallory_active": False,
-    "mode": "ephemeral",  # 'ephemeral' or 'static'
-    "history": []  # Stores past sessions: {id, time, mode, burak_key, status}
+    "mallory_intercept_mode": False,
+    "current_session_id": None,
+    "shared_secrets": {"arda": None, "burak": None, "mallory": None},
+    "history": []  # {id, time, type, compromised}
 }
 
 
-# --- Helper Functions ---
-
-def narrate(text):
-    """Sends a subtitle explanation to the frontend."""
-    emit('narrate', {'text': text})
-
-
-def log_event(source, message, type="info"):
-    """Sends a log entry."""
-    emit('log', {'source': source, 'msg': message, 'type': type})
+def derive_key(secret_int):
+    """Derive a simple AES-like key from the integer secret."""
+    if secret_int is None: return None
+    return hashlib.sha256(str(secret_int).encode()).hexdigest()[:16]  # 16 chars
 
 
-def update_history_ui():
-    """Sends the session history list to frontend."""
-    # Convert private keys to string for display/comparison logic, hide actual values
-    safe_history = []
-    for sess in STATE['history']:
-        safe_history.append({
-            'id': sess['id'],
-            'time': sess['time'],
-            'mode': sess['mode'],
-            'status': sess['status'],  # 'secure', 'compromised'
-            'secret_hint': sess['secret_hint']
-        })
-    emit('update_history', {'history': safe_history})
+def xor_encrypt(msg, secret):
+    """Toy encryption for visualization."""
+    if secret is None: return msg
+    key = derive_key(secret)
+    encrypted = []
+    for i, char in enumerate(msg):
+        key_char = key[i % len(key)]
+        encrypted.append(chr(ord(char) ^ ord(key_char)))
+    return ''.join(encrypted)
 
-
-# --- Routes & Sockets ---
 
 @app.route('/')
 def index():
@@ -58,138 +48,141 @@ def index():
 
 @socketio.on('init_handshake')
 def handle_handshake(data):
-    STATE['mode'] = data.get('type')
+    STATE['current_session_id'] = str(uuid.uuid4())[:6]
+    STATE['shared_secrets'] = {"arda": None, "burak": None, "mallory": None}
 
-    narrate("1. Adım: Taraflar anahtar çiftlerini hazırlıyor. Arda her zaman yeni (Ephemeral) anahtar üretir.")
-
-    # 1. Arda Generates Key (Always Ephemeral)
+    # 1. Init Arda (Always Ephemeral)
     STATE['arda'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    log_event("Arda", f"Özel Anahtar Üretildi: {str(STATE['arda']._private_key)[:6]}...", "info")
-    emit('anim_key_gen', {'target': 'arda'})
 
-    # 2. Burak Generates Key
-    if STATE['mode'] == 'static' and STATE['burak']:
-        narrate("Burak 'Statik' modda. Daha önceki uzun vadeli anahtarını kullanıyor.")
-        log_event("Burak", "Mevcut STATİK Özel Anahtar yüklendi (Değişmedi).", "warning")
+    # 2. Init Burak (Static or Ephemeral)
+    if data['type'] == 'static' and STATE['burak']:
+        pass  # Keep existing key
     else:
-        narrate("Burak 'Geçici' (Ephemeral) modda. Bu oturum için yeni bir anahtar üretiyor.")
         STATE['burak'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-        log_event("Burak", f"Yeni Geçici (Ephemeral) Anahtar Üretildi: {str(STATE['burak']._private_key)[:6]}...",
-                  "info")
-        emit('anim_key_gen', {'target': 'burak'})
 
-    # 3. Public Key Exchange Animation
-    narrate("2. Adım: Açık anahtarlar (Public Keys) güvensiz kanal üzerinden gönderiliyor.")
-    emit('anim_packet', {
-        'from': 'arda', 'to': 'burak',
-        'payload': f'AçıkA: {str(STATE["arda"].public_key)[:8]}...',
-        'intercepted': STATE['mallory_active']
+    emit('log', {'source': 'Sistem', 'msg': 'El sıkışma başlatıldı.'})
+    emit('narrate', {'text': 'Arda Açık Anahtarını (Public Key) Burak\'a gönderiyor...'})
+
+    # 3. Animate Packet (Checks if interception is on)
+    emit('anim_packet_start', {
+        'intercept_mode': STATE['mallory_intercept_mode'],
+        'original_payload': str(STATE['arda'].public_key)[:12] + '...'
     })
 
 
-@socketio.on('complete_handshake')
-def finalize_handshake():
-    """Calculates shared secrets after animation finishes"""
+@socketio.on('packet_forwarded')
+def handle_forward(data):
+    """Called after user manually forwards packet from modal."""
+    injection_type = data.get('inject_type')
 
-    session_id = str(uuid.uuid4())[:8]
-    timestamp = datetime.now().strftime("%H:%M:%S")
+    payload_to_burak = STATE['arda'].public_key
 
-    if STATE['mallory_active']:
-        narrate("SALDIRI TESPİT EDİLDİ: Mallory araya girdi ve Arda'nın anahtarını 'p-1' ile değiştirdi!")
-
-        # ATTACK: Subgroup Confinement
-        p_minus_1 = DH_2048_P - 1
-
-        # Burak computes secret using P-1
-        burak_secret = pow(p_minus_1, STATE['burak']._private_key, DH_2048_P)
-
-        log_event("Mallory", "ENJEKSİYON: Arda'nın anahtarı yerine (P-1) gönderildi!", "danger")
-        log_event("Burak", "Ortak Sır Hesaplandı (Manipüle Edilmiş)", "danger")
-
-        emit('update_status', {'actor': 'burak', 'status': 'ELE GEÇİRİLDİ', 'secret': str(burak_secret)})
-        emit('update_status', {'actor': 'mallory', 'status': 'KIRILDI', 'secret': '1 veya P-1'})
-
-        narrate("Sonuç: Burak'ın hesapladığı sır sadece 1 veya -1 olabilir. Mallory şifreyi 2 denemede çözer.")
-
+    if injection_type == 'subgroup':
+        payload_to_burak = DH_2048_P - 1  # Malicious P-1
+        STATE['shared_secrets']['mallory'] = 'DETECTED'  # Flag
+        emit('log', {'source': 'Mallory', 'msg': 'ENJEKSİYON: (P-1) değeri gönderildi.'})
+        emit('narrate', {'text': 'Mallory paketi değiştirdi! Alt Grup Saldırısı yapılıyor.'})
+    elif injection_type == 'random':
+        payload_to_burak = 123456789  # Junk
+        emit('log', {'source': 'Mallory', 'msg': 'Bozuk veri gönderildi.'})
     else:
-        # Normal DH
-        arda_s = STATE['arda'].generate_shared_secret(STATE['burak'].public_key)
-        burak_s = STATE['burak'].generate_shared_secret(STATE['arda'].public_key)
+        emit('log', {'source': 'Mallory', 'msg': 'Paket değiştirilmeden iletildi.'})
+        emit('narrate', {'text': 'Mallory sadece izliyor. Paket değiştirilmedi.'})
 
-        narrate("3. Adım: Başarılı! İki taraf da matematiksel olarak aynı Ortak Sırrı (Shared Secret) türetti.")
-        log_event("Sistem", "Kanal Güvenli. Ortak Sır oluşturuldu.", "success")
+    # Complete the animation to Burak
+    emit('anim_packet_end', {'success': True})
 
-        emit('update_status', {'actor': 'arda', 'status': 'GÜVENLİ', 'secret': str(arda_s)[:10]})
-        emit('update_status', {'actor': 'burak', 'status': 'GÜVENLİ', 'secret': str(burak_s)[:10]})
+    # Calculate Secrets
+    try:
+        # Burak computes based on what he received
+        burak_secret = pow(payload_to_burak, STATE['burak']._private_key, DH_2048_P)
+        STATE['shared_secrets']['burak'] = burak_secret
 
-        # Add to History (For Forward Secrecy Demo)
-        new_session = {
-            'id': session_id,
-            'time': timestamp,
-            'mode': 'Statik' if STATE['mode'] == 'static' else 'Geçici',
-            'burak_key_ref': STATE['burak']._private_key,  # Store actual ref to check equality later
-            'status': 'GÜVENLİ',
-            'secret_hint': str(burak_s)[:8]
+        # Arda computes normally (assuming he got Burak's key correctly for this simplified demo)
+        arda_secret = STATE['arda'].generate_shared_secret(STATE['burak'].public_key)
+        STATE['shared_secrets']['arda'] = arda_secret
+
+        # Check security status
+        is_secure = (burak_secret == arda_secret) and (injection_type == 'original')
+
+        # Add to history
+        sess_entry = {
+            'id': STATE['current_session_id'],
+            'time': datetime.now().strftime("%H:%M:%S"),
+            'burak_priv_ref': STATE['burak']._private_key,
+            'is_compromised': False  # Will change if key leaks
         }
-        STATE['history'].insert(0, new_session)  # Prepend
-        # Keep only last 5
-        if len(STATE['history']) > 5:
-            STATE['history'].pop()
+        if not is_secure: sess_entry['is_compromised'] = True  # Immediately broken if MitM
 
-        update_history_ui()
-        narrate("Oturum kaydedildi. 'İleriye Dönük Gizlilik' testi için yeni oturumlar açabilirsiniz.")
+        STATE['history'].insert(0, sess_entry)
+        if len(STATE['history']) > 8: STATE['history'].pop()
+
+        emit('update_history', STATE['history'])
+        emit('handshake_complete', {'secure': is_secure})
+
+    except Exception as e:
+        print(e)
 
 
-@socketio.on('toggle_attack')
-def toggle_attack():
-    STATE['mallory_active'] = not STATE['mallory_active']
-    status = "AKTİF" if STATE['mallory_active'] else "PASİF"
+@socketio.on('send_chat')
+def handle_chat(data):
+    """Encrypts message with calculated keys."""
+    msg = data['msg']
 
-    if STATE['mallory_active']:
-        narrate("Mallory dinleme moduna geçti. 'Small Subgroup' saldırısı için hazır.")
-    else:
-        narrate("Mallory devredışı bırakıldı.")
+    # Arda encrypts
+    cipher = xor_encrypt(msg, STATE['shared_secrets']['arda'])
 
-    log_event("Mallory", f"Araya Girme Modu: {status}", "warning")
-    emit('update_mallory', {'active': STATE['mallory_active']})
+    # Send visualization
+    emit('anim_chat', {'cipher': cipher[:10] + '...'})
+
+    # Burak decrypts
+    try:
+        decrypted = xor_encrypt(cipher, STATE['shared_secrets']['burak'])
+    except:
+        decrypted = "????"
+
+    # Check validity (simple check)
+    success = (decrypted == msg)
+
+    emit('chat_delivery', {
+        'original': msg,
+        'cipher': cipher,  # In real app, hex encode this
+        'decrypted': decrypted,
+        'success': success
+    })
+
+    # If Mallory did Subgroup attack, show she can read it
+    if STATE['shared_secrets']['mallory'] == 'DETECTED':
+        # Mallory tries keys 1 and P-1.
+        # For demo, if MitM was active, we assume she cracked it.
+        emit('log', {'source': 'Mallory', 'msg': f'Mesaj Çözüldü: "{msg}"'})
+
+
+@socketio.on('toggle_interception')
+def toggle(data):
+    STATE['mallory_intercept_mode'] = data['active']
+    msg = "Aktif (Paketleri Durduracak)" if data['active'] else "Pasif"
+    emit('narrate', {'text': f'Mallory Müdahale Modu: {msg}'})
+    emit('mallory_state', {'active': data['active']})
 
 
 @socketio.on('leak_key')
 def leak_key():
-    """Forward Secrecy Demo: Leak Burak's CURRENT Key and check history"""
-    if not STATE['burak']:
-        narrate("Hata: Sızdırılacak bir anahtar yok. Önce oturum başlatın.")
-        return
+    if not STATE['burak']: return
+    leaked_key = STATE['burak']._private_key
 
-    current_key = STATE['burak']._private_key
-    key_str = str(current_key)
+    emit('narrate', {'text': 'KRİTİK: Burak\'ın sunucusu hacklendi! Anahtar sızdı.'})
+    emit('anim_leak', {})
 
-    narrate("KRİTİK: Burak'ın sunucusu hacklendi! Saldırgan şu anki özel anahtarı ele geçirdi.")
-    log_event("Sistem", f"KRİTİK: Burak'ın Anahtarı Sızdı: {key_str[:8]}...", "danger")
-    emit('anim_leak', {'key': key_str})
-
-    # Check History for Forward Secrecy Failure
-    narrate("Analiz: Saldırgan sızan anahtarı kullanarak GEÇMİŞ oturumları çözmeye çalışıyor...")
-
-    compromised_count = 0
+    # Update History based on Key Reference (Forward Secrecy Logic)
+    affected_count = 0
     for sess in STATE['history']:
-        # If the session used the SAME key as the leaked one, it is compromised.
-        if sess['burak_key_ref'] == current_key:
-            sess['status'] = 'ÇÖZÜLDÜ'
-            compromised_count += 1
-        else:
-            # If Ephemeral was used, keys are different, so it stays Secure
-            pass
+        if sess['burak_priv_ref'] == leaked_key:
+            sess['is_compromised'] = True
+            affected_count += 1
 
-    update_history_ui()
-
-    if compromised_count > 1:
-        narrate(
-            f"SONUÇ: İleriye Dönük Gizlilik YOK! Statik anahtar yüzünden {compromised_count} geçmiş oturum çözüldü.")
-    elif compromised_count == 1:
-        narrate("SONUÇ: Sadece güncel oturum etkilendi. Geçmiş oturumlar (farklı anahtarlı) güvende.")
-    else:
-        narrate("SONUÇ: Geçmiş kayıtlar güvende.")
+    emit('update_history', STATE['history'])
+    emit('log', {'source': 'Sistem', 'msg': f'{affected_count} geçmiş oturumun şifresi çözüldü.'})
 
 
 if __name__ == '__main__':

@@ -35,11 +35,8 @@ The content is organized as follows:
 
 # Directory Structure
 ```
-attack_lab/
-  __init__.py
-  forward_secrecy.py
-  subgroup_mitm.py
-  utils.py
+ai/
+  Implementation-Plan-Task-Lists.md
 attack_visualizer/
   static/
     script.js
@@ -64,15 +61,152 @@ references/
   The Elliptic Curve Diffie-Hellman (ECDH).md
   The Performance of Elliptic Curve Based Group Diffie-Hellman Protocols for Secure Group Communication over Ad Hoc Networks.md
   TLS & Perfect Forward Secrecy.md
+  visualization-training.md
 .gitignore
 crypto_benchmark_report.html
 Dockerfile
-Implementation-Plan-Task-Lists.md
 main.py
 Makefile
 ```
 
 # Files
+
+## File: ai/Implementation-Plan-Task-Lists.md
+```markdown
+## Project Implementation Plan
+**`Title`**: Diffie-Hellman Anahtar Değişim Protokolü: Güvensiz Bir Kanalda Güvenli Anahtar Oluşturmanın Görsel Simülasyonu ve MitM Zafiyet Analizi 
+**`Strategy`**: Build, Measure, Break & Simulate
+
+---
+
+## 1. Project Objective
+To transition from a theoretical simulation to a **technical demonstration** by implementing cryptographic primitives from scratch, rigorously benchmarking their performance in a controlled environment, and demonstrating real-world vulnerabilities (MitM and Forward Secrecy failures) as cited in academic literature.
+
+---
+
+## 2. Architecture OverviewThe software will consist of three distinct modules:
+
+1. **`crypto_engine/`**: The "No Libraries" core implementing raw mathematical algorithms.
+2. **`benchmark_suite/`**: The scientific testing harness running inside Docker.
+3. **`attack_lab/`**: The demonstration environment for MitM and Forward Secrecy exploits.
+
+---
+
+## Phase 1: Build (The "No Libraries" Math Engine)
+*Goal: Address the critique "Build the algorithms yourself" by implementing core logic without `pow()` or OpenSSL.*
+
+### **A. Modular Arithmetic (Classic DH)**
+* [x] **Implement `square_and_multiply(base, exponent, modulus)`:**
+* **Logic:** Convert exponent to binary. Iterate bits: square the current value, and if the bit is `1`, multiply by the base. Apply modulo at every step.
+* **Purpose:** Demonstrates the O(\log n) efficiency required for large primes (e.g., 2048-bit).
+
+
+###**B. Elliptic Curve Arithmetic (ECDH)**
+* [x] **Define `EllipticCurve` Class:**
+* Parameters: a, b, p (Equation: y^2 = x^3 + ax + b \pmod p).
+
+
+* [x] **Implement `point_add(P, Q)`:**
+* Geometric addition logic (slope calculation over finite field).
+
+
+* [x] **Implement `point_double(P)`:**
+* Tangent line logic for adding a point to itself.
+
+
+* [x] **Implement `scalar_multiply(k, P)`:**
+* **Logic:** The "Double-and-Add" algorithm (analogous to Square-and-Multiply).
+
+**Purpose:** This is the core performance engine for ECDH.
+
+### **C. Protocol Logic**
+* [x] **Static DH:** Hardcoded private keys (a) for demonstrating lack of Forward Secrecy.
+* [x] **DHE (Ephemeral):** Generates new random a per session.
+* [x] **ECDHE:** Generates new random private scalar k per session using the `EllipticCurve` class.
+
+---
+
+## Phase 2: Measure (The Scientific Benchmark)
+*Goal: Address the critique "How did you come to that conclusion?" regarding efficiency using reproducible experiments.*
+
+### **A. Experimental Environment (Docker)**
+* [x] **Create `Dockerfile`:**
+* Base Image: `python:3.9-slim`
+* Purpose: Ensures the teacher can replicate exact results.
+
+* [x] **Resource Constraints (The "Ad Hoc Network" Sim):**
+* 
+* **Scenario A (IoT Node):** Run with `docker run --cpus="0.5" --memory="128m"` to simulate limited hardware.
+
+* **Scenario B (Standard Server):** Run with `docker run --cpus="2.0" --memory="1g"`.
+
+
+### **B. The Benchmark Script**
+* [x] Define Security Equivalences:
+* **Test 1:** DH-2048 vs. ECDH-224 (112-bit security).
+* **Test 2:** DH-3072 vs. ECDH-256 (128-bit security).
+
+
+* [x] **Metrics to Record:**
+* **Wall-clock Time:** Time taken to generate Key Pair + Compute Shared Secret.
+* **Bandwidth:** Size of Public Key (A vs. Point P) in bytes.
+
+
+* [x] **Output:** Generate CSV data to produce a bar chart showing DH latency growing exponentially while ECDH remains linear.
+
+---
+
+## Phase 3: Break (Vulnerability Analysis)
+*Goal: Address "Ground findings in real-world data" by replicating specific attacks found in literature.*
+
+### **A. Forward Secrecy "Time Travel" Demo**
+* [x] **The Setup:** A `SessionLogger` records encrypted transcripts of 5 distinct chat sessions.
+* [x] **Attack Scenario 1 (Static DH):**
+* Action: Leak the long-term private key.
+* Result: Decrypt **all 5** past sessions from the log.
+* Context: "Static public keys provide neither forward secrecy... nor key-compromise resilience".
+
+* [x] **Attack Scenario 2 (ECDHE):**
+* Action: Leak the private key from Session #5.
+* Result: Decrypt Session #5, but **fail** to decrypt Sessions #1-4.
+* Context: Proves that compromising keys does not compromise past session keys.
+
+
+### **B. Small Subgroup Confinement Attack (MitM)**
+* [x] **Vulnerable Implementation:** Create a "burak" node that receives public key A but **skips** validating if A is a valid group generator.
+* [x] **The Attack Vector:**
+* **Mallory:** Intercepts arda's key.
+
+**Injection:** Replaces it with p-1 (order 2 subgroup generator).
+
+* [x] **The Exploit:**
+* burak computes S = (p-1)^b \pmod p.
+* Result: S is forced to be either `1` or `-1`.
+* Mallory brute-forces the message by trying only these 2 keys.
+
+
+* [x] **Real-World Context:** Cite that 88% of Amazon Load Balancers were found vulnerable to parameter reuse/validation issues.
+
+---
+
+## 4. Presentation Deliverables Checklist
+| Segment | Artifact to Show | Purpose |
+| --- | --- | --- |
+| **Implementation** | Code walk-through of `scalar_multiply` (Double-and-Add). | Prove you built the math yourself. |
+| **Efficiency** | Graph: "Execution Time: DH vs ECDH" (generated from Docker). | Provide concrete experimental data. |
+| **Security (FS)** | Console Log/UI: "Session 1 Decryption FAILED" (after key leak). | Visual proof of Forward Secrecy. |
+| **Security (MitM)** | Live Demo: Decrypting a message using the key `1`. | Demonstrate the "Small Subgroup" attack. |
+
+---
+
+* [ ] Cite all academic papers that informed your implementation, measurements, and attack simulations.
+
+## 5. References & Citations (All reference research project documents can be found in the `references/` folder)
+* **[1] Efficiency:** *The Performance of Elliptic Curve Based Group Diffie-Hellman Protocols* (Wang et al.) - Used for defining testbed constraints and security equivalence levels.
+* **[2] MitM Vulnerability:** *Measuring Small Subgroup Attacks Against Diffie-Hellman* (Valenta et al.) - Used for the Subgroup Confinement Attack logic.
+* **[3] Forward Secrecy:** *The Elliptic Curve Diffie-Hellman (ECDH)* (Haakegaard & Lang) - Used for defining static vs. ephemeral key definitions.
+* **[4] Diffie-Hellman:** *Authenticated Key Exchange Provably Secure against the MiTM Attack* (Ann & Peter)
+```
 
 ## File: references/Authenticated Key Exchange Provably Secure against the MiTM Attack.md
 ```markdown
@@ -1450,784 +1584,95 @@ Let’s focus on the server part. Enabling `DHE-RSA-AES128-SHA` cipher suite hin
 Your mileage may vary but the computational cost for enabling perfect forward secrecy with an ECDHE cipher suite seems a small sacrifice for better security.
 ```
 
-## File: Implementation-Plan-Task-Lists.md
+## File: references/visualization-training.md
 ```markdown
-## Project Implementation Plan
-**`Title`**: Diffie-Hellman Anahtar Değişim Protokolü: Güvensiz Bir Kanalda Güvenli Anahtar Oluşturmanın Görsel Simülasyonu ve MitM Zafiyet Analizi 
-**`Strategy`**: Build, Measure, Break & Simulate
+### **The Presentation Script & Actions**
+
+Break your demo into **three distinct acts**.
+
+#### **Act 1: The Baseline (How it *should* work)**
+*Goal: Prove that the simulator works and that Arda/Burak can communicate securely.*
+
+1.  **Action:** Ensure "Manuel Müdahale Modu" (Manual Interception) is **OFF**.
+2.  **Action:** Click **"Yeni Oturum (Ephemeral)"**.
+    *   *Observe:* The packet travels from Arda to Burak.
+    *   *Observe:* The "Anahtar (Key)" icons update.
+    *   *Observe:* The Status Badge says "AES-256 (Güvenli)".
+3.  **Action:** Go to the Chat box. Type: `Hello Burak, this is secret.` and click Send.
+    *   *Observe:* The ciphertext (scrambled text) appears briefly, then Burak receives the decrypted message.
+4.  **Narrative (What to say):**
+    > "First, let's establish a baseline. Here we have Arda (Client) and Burak (Server). We are using **Ephemeral Diffie-Hellman**.
+    >
+    > Notice that when I send a message, the network only sees ciphertext. Burak successfully derives the key and decrypts it. This is a secure channel."
 
 ---
 
-## 1. Project Objective
-To transition from a theoretical simulation to a **technical demonstration** by implementing cryptographic primitives from scratch, rigorously benchmarking their performance in a controlled environment, and demonstrating real-world vulnerabilities (MitM and Forward Secrecy failures) as cited in academic literature.
+#### **Act 2: The Forward Secrecy Failure (The "Time Travel" Attack)**
+*Goal: Demonstrate why Static Keys are dangerous using the Timeline feature.*
+
+1.  **Action:** Click **"Statik Oturum"** (Static Session). Wait for handshake.
+2.  **Action:** Click **"Statik Oturum"** *again*. (Do this 2-3 times).
+    *   *Observe:* The Timeline at the bottom fills with Green Locks.
+    *   *Point out:* "Notice Burak is using the **same** private key every time."
+3.  **Action:** Click the red **"Burak'ın Anahtarını Sızdır"** (Leak Key) button.
+    *   *Observe:* **ALL** the locks in the timeline turn **RED (Open)**.
+4.  **Narrative (What to say):**
+    > "Now, let's switch to **Static Diffie-Hellman**, which is common in older or misconfigured IoT devices. We have established 3 different sessions over the past hour. They all look secure (Green).
+    >
+    > But what happens if a hacker steals Burak's server key *today*?
+    >
+    > *(Click Leak Button)*
+    >
+    > Look at the timeline. Because the key was static, **every past conversation is compromised**. This system lacks **Forward Secrecy**. A hack today reveals secrets from a year ago."
+
+5.  **Action:** Click **"Yeni Oturum (Ephemeral)"** twice.
+6.  **Action:** Click **"Burak'ın Anahtarını Sızdır"** again.
+    *   *Observe:* Only the *last* lock turns red. The previous ones stay Green.
+7.  **Narrative:**
+    > "Now observe Ephemeral mode. Even though I leaked the key just now, the previous sessions remain Green. This is **Perfect Forward Secrecy**. The hacker only gets the current session, not the history."
 
 ---
 
-## 2. Architecture OverviewThe software will consist of three distinct modules:
+#### **Act 3: The MitM Attack (Small Subgroup Confinement)**
+*Goal: The Finale. You take control of the network.*
 
-1. **`crypto_engine/`**: The "No Libraries" core implementing raw mathematical algorithms.
-2. **`benchmark_suite/`**: The scientific testing harness running inside Docker.
-3. **`attack_lab/`**: The demonstration environment for MitM and Forward Secrecy exploits.
-
----
-
-## Phase 1: Build (The "No Libraries" Math Engine)
-*Goal: Address the critique "Build the algorithms yourself" by implementing core logic without `pow()` or OpenSSL.*
-
-### **A. Modular Arithmetic (Classic DH)**
-* [x] **Implement `square_and_multiply(base, exponent, modulus)`:**
-* **Logic:** Convert exponent to binary. Iterate bits: square the current value, and if the bit is `1`, multiply by the base. Apply modulo at every step.
-* **Purpose:** Demonstrates the O(\log n) efficiency required for large primes (e.g., 2048-bit).
-
-
-###**B. Elliptic Curve Arithmetic (ECDH)**
-* [x] **Define `EllipticCurve` Class:**
-* Parameters: a, b, p (Equation: y^2 = x^3 + ax + b \pmod p).
-
-
-* [x] **Implement `point_add(P, Q)`:**
-* Geometric addition logic (slope calculation over finite field).
-
-
-* [x] **Implement `point_double(P)`:**
-* Tangent line logic for adding a point to itself.
-
-
-* [x] **Implement `scalar_multiply(k, P)`:**
-* **Logic:** The "Double-and-Add" algorithm (analogous to Square-and-Multiply).
-
-**Purpose:** This is the core performance engine for ECDH.
-
-### **C. Protocol Logic**
-* [x] **Static DH:** Hardcoded private keys (a) for demonstrating lack of Forward Secrecy.
-* [x] **DHE (Ephemeral):** Generates new random a per session.
-* [x] **ECDHE:** Generates new random private scalar k per session using the `EllipticCurve` class.
+1.  **Action:** Toggle the **"Manuel Müdahale Modu"** switch to **ON**.
+    *   *Visual:* Mallory's node lights up.
+2.  **Action:** Click **"Yeni Oturum (Ephemeral)"**.
+    *   *Visual:* The packet stops halfway at Mallory. The **"Paket Yakalandı"** Modal pops up.
+3.  **Narrative (While Modal is open):**
+    > "I am now the attacker. I have intercepted Arda's public key in mid-air. I have a choice. I can let it pass, or I can inject a mathematical poison."
+4.  **Action:** In the Modal, select **"Alt Grup Saldırısı (P-1 Enjekte Et)"**.
+    *   *Explain:* "I am replacing Arda's valid key with the value $p-1$. In modular arithmetic, this is equivalent to $-1$. This forces the shared secret to resolve to either 1 or -1, eliminating the encryption complexity."
+5.  **Action:** Click **"Paketi İlet"**.
+6.  **Action:** Go to Chat. Type: `Top Secret Password`.
+    *   *Observe:* The status badge says **"KIRILDI"**. The log says Mallory decrypted the message.
+7.  **Narrative:**
+    > "Burak received my malicious key but didn't validate it. He computed the shared secret. Because I forced the math into a small subgroup, the key space was reduced from $2^{2048}$ possibilities to just **2**.
+    >
+    > As you can see in the logs, Mallory instantly decrypted the message. The channel is broken."
 
 ---
 
-## Phase 2: Measure (The Scientific Benchmark)
-*Goal: Address the critique "How did you come to that conclusion?" regarding efficiency using reproducible experiments.*
+### **Part 3: Explaining the "Why" (Q&A Prep)**
 
-### **A. Experimental Environment (Docker)**
-* [x] **Create `Dockerfile`:**
-* Base Image: `python:3.9-slim`
-* Purpose: Ensures the teacher can replicate exact results.
+Audience members might ask specific questions. Here is how to answer using your visualizer as evidence:
 
-* [x] **Resource Constraints (The "Ad Hoc Network" Sim):**
-* 
-* **Scenario A (IoT Node):** Run with `docker run --cpus="0.5" --memory="128m"` to simulate limited hardware.
+**Q: Why is Ephemeral better?**
+*   **Answer:** "As shown in the timeline demo, Ephemeral keys are destroyed after use. If you steal a key, you can't go back in time. Static keys exist forever, creating a permanent vulnerability."
 
-* **Scenario B (Standard Server):** Run with `docker run --cpus="2.0" --memory="1g"`.
+**Q: How does the P-1 attack work?**
+*   **Answer:** "Diffie-Hellman relies on a large group of numbers. By injecting `p-1`, I moved the math into a 'Subgroup' that only has two elements: $\{1, -1\}$. It turns a hard math problem into a trivial guessing game."
 
+**Q: How do we prevent the MitM attack?**
+*   **Answer:** "If you look at the `crypto_engine` code, we simply need to check `if public_key == p-1` before accepting it. This demo simulates a 'Naive' implementation that skipped that check."
 
-### **B. The Benchmark Script**
-* [x] Define Security Equivalences:
-* **Test 1:** DH-2048 vs. ECDH-224 (112-bit security).
-* **Test 2:** DH-3072 vs. ECDH-256 (128-bit security).
+### **Summary Checklist for Presentation**
 
-
-* [x] **Metrics to Record:**
-* **Wall-clock Time:** Time taken to generate Key Pair + Compute Shared Secret.
-* **Bandwidth:** Size of Public Key (A vs. Point P) in bytes.
-
-
-* [x] **Output:** Generate CSV data to produce a bar chart showing DH latency growing exponentially while ECDH remains linear.
-
----
-
-## Phase 3: Break (Vulnerability Analysis)
-*Goal: Address "Ground findings in real-world data" by replicating specific attacks found in literature.*
-
-### **A. Forward Secrecy "Time Travel" Demo**
-* [ ] **The Setup:** A `SessionLogger` records encrypted transcripts of 5 distinct chat sessions.
-* [ ] **Attack Scenario 1 (Static DH):**
-* Action: Leak the long-term private key.
-* Result: Decrypt **all 5** past sessions from the log.
-* Context: "Static public keys provide neither forward secrecy... nor key-compromise resilience".
-
-* [ ] **Attack Scenario 2 (ECDHE):**
-* Action: Leak the private key from Session #5.
-* Result: Decrypt Session #5, but **fail** to decrypt Sessions #1-4.
-* Context: Proves that compromising keys does not compromise past session keys.
-
-
-### **B. Small Subgroup Confinement Attack (MitM)**
-* [ ] **Vulnerable Implementation:** Create a "burak" node that receives public key A but **skips** validating if A is a valid group generator.
-* [ ] **The Attack Vector:**
-* **Mallory:** Intercepts arda's key.
-
-**Injection:** Replaces it with p-1 (order 2 subgroup generator).
-
-* [ ] **The Exploit:**
-* burak computes S = (p-1)^b \pmod p.
-* Result: S is forced to be either `1` or `-1`.
-* Mallory brute-forces the message by trying only these 2 keys.
-
-
-* [ ] **Real-World Context:** Cite that 88% of Amazon Load Balancers were found vulnerable to parameter reuse/validation issues.
-
----
-
-## 4. Presentation Deliverables Checklist
-| Segment | Artifact to Show | Purpose |
-| --- | --- | --- |
-| **Implementation** | Code walk-through of `scalar_multiply` (Double-and-Add). | Prove you built the math yourself. |
-| **Efficiency** | Graph: "Execution Time: DH vs ECDH" (generated from Docker). | Provide concrete experimental data. |
-| **Security (FS)** | Console Log: "Session 1 Decryption FAILED" (after key leak). | Visual proof of Forward Secrecy. |
-| **Security (MitM)** | Live Demo: Decrypting a message using the key `1`. | Demonstrate the "Small Subgroup" attack. |
-
----
-
-* [ ] Cite all academic papers that informed your implementation, measurements, and attack simulations.
-
-## 5. References & Citations (All reference research project documents can be found in the `references/` folder)
-* **[1] Efficiency:** *The Performance of Elliptic Curve Based Group Diffie-Hellman Protocols* (Wang et al.) - Used for defining testbed constraints and security equivalence levels.
-* **[2] MitM Vulnerability:** *Measuring Small Subgroup Attacks Against Diffie-Hellman* (Valenta et al.) - Used for the Subgroup Confinement Attack logic.
-* **[3] Forward Secrecy:** *The Elliptic Curve Diffie-Hellman (ECDH)* (Haakegaard & Lang) - Used for defining static vs. ephemeral key definitions.
-* **[4] Diffie-Hellman:** *Authenticated Key Exchange Provably Secure against the MiTM Attack* (Ann & Peter)
-```
-
-## File: attack_lab/forward_secrecy.py
-```python
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from crypto_engine.protocols import DiffieHellmanProtocol
-from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
-from attack_lab.utils import *
-
-
-def run_forward_secrecy_demo():
-    log_title("SCENARIO A: Forward Secrecy Analysis")
-
-    # ==========================================
-    # PART 1: THE STATIC KEY DISASTER
-    # ==========================================
-    print(f"{Colors.BOLD}--- Simulation 1: Static DH (No Forward Secrecy) ---{Colors.RESET}")
-
-    # 1. Setup Static Server (burak uses Long Term Key)
-    burak_static = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    log_actor("Server(burak)", "Initialized with STATIC Private Key", f"Key: {str(burak_static._private_key)[:10]}...")
-
-    # 2. Simulate Past Traffic (Session 1 - Yesterday)
-    arda_v1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)  # arda is ephemeral
-
-    # Handshake
-    s1_secret = burak_static.generate_shared_secret(arda_v1.public_key)
-    s1_msg = "My password is 'hunter2'"
-    s1_cipher = simple_xor_encrypt(s1_msg, s1_secret)
-
-    log_actor("arda", "Sent Encrypted Msg (Session 1)", f"Ciphertext: {s1_cipher.hex()[:20]}...", Colors.BLUE)
-
-    # 3. Simulate Traffic (Session 2 - Today)
-    arda_v2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-
-    # Handshake
-    s2_secret = burak_static.generate_shared_secret(arda_v2.public_key)
-    s2_msg = "Attack at dawn"
-    s2_cipher = simple_xor_encrypt(s2_msg, s2_secret)
-
-    log_actor("arda", "Sent Encrypted Msg (Session 2)", f"Ciphertext: {s2_cipher.hex()[:20]}...", Colors.BLUE)
-
-    # 4. THE LEAK (Mallory hacks the server TODAY)
-    leaked_private_key = burak_static._private_key
-    log_attack("SERVER COMPROMISED!", f"Leaked Key: {str(leaked_private_key)[:10]}...")
-
-    # 5. The Exploit (Time Travel)
-    # Mallory uses the key stolen TODAY to decrypt Session 1 (YESTERDAY)
-    print(f"\n{Colors.RED}Mallory attempts to decrypt PAST Session 1 logs...{Colors.RESET}")
-
-    # Mallory reconstructs the secret: (arda_Public_V1 ^ Leaked_burak_Priv) % P
-    mallory_s1_calc = pow(arda_v1.public_key, leaked_private_key, DH_2048_P)
-    decrypted_s1 = simple_xor_decrypt(s1_cipher, mallory_s1_calc)
-
-    if decrypted_s1 == s1_msg:
-        log_attack("DECRYPTION SUCCESSFUL", f"Recovered Past Msg: '{decrypted_s1}'")
-        print(f"{Colors.RED}>> CRITICAL FAILURE: Compromise of current key exposed past data.{Colors.RESET}\n")
-    else:
-        print("Decryption Failed.")
-
-    # ==========================================
-    # PART 2: THE EPHEMERAL FIX (DHE)
-    # ==========================================
-    print(f"{Colors.BOLD}--- Simulation 2: Ephemeral DH (Perfect Forward Secrecy) ---{Colors.RESET}")
-
-    # 1. Session 1 (Yesterday) - burak uses Ephemeral Key A
-    burak_eph_1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    arda_eph_1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    s1_secret = burak_eph_1.generate_shared_secret(arda_eph_1.public_key)
-    s1_cipher = simple_xor_encrypt("Nuclear Launch Codes: 0000", s1_secret)
-
-    log_actor("System", "Session 1 Complete", "Keys destroyed from memory.", Colors.YELLOW)
-
-    # 2. Session 2 (Today) - burak uses Ephemeral Key B
-    burak_eph_2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)  # NEW KEY!
-    arda_eph_2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    s2_secret = burak_eph_2.generate_shared_secret(arda_eph_2.public_key)
-
-    # 3. THE LEAK (Mallory hacks server TODAY)
-    # She only gets the key currently in memory (Session 2's key)
-    leaked_key_today = burak_eph_2._private_key
-    log_attack("SERVER COMPROMISED!", f"Leaked Key (Session 2): {str(leaked_key_today)[:10]}...")
-
-    # 4. The Exploit Attempt
-    print(f"\n{Colors.RED}Mallory attempts to decrypt PAST Session 1 logs...{Colors.RESET}")
-
-    # Mallory tries to use Today's key on Yesterday's traffic
-    mallory_fail_calc = pow(arda_eph_1.public_key, leaked_key_today, DH_2048_P)
-    decrypted_attempt = simple_xor_decrypt(s1_cipher, mallory_fail_calc)
-
-    if decrypted_attempt != "Nuclear Launch Codes: 0000":
-        print(f"{Colors.GREEN}{Colors.BOLD}>> DECRYPTION FAILED!{Colors.RESET}")
-        print(f"   Garbage Output: {decrypted_attempt[:20]}...")
-        log_actor("System", "Forward Secrecy Verified", "Past secrets remain secure.", Colors.GREEN)
-
-
-if __name__ == "__main__":
-    run_forward_secrecy_demo()
-```
-
-## File: attack_lab/subgroup_mitm.py
-```python
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from crypto_engine.protocols import DiffieHellmanProtocol
-from crypto_engine.modular_arithmetic import ModularArithmetic
-from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
-from attack_lab.utils import *
-
-
-class NaiveBurak(DiffieHellmanProtocol):
-    """
-    A Vulnerable Implementation of burak.
-    He forgot to check if the public key is in range [2, p-2].
-    """
-
-    def generate_shared_secret(self, other_public_key: int) -> int:
-        # VULNERABILITY: No check for small subgroup attacks!
-        # Normal code would raise Error if other_public_key == p-1
-
-        # Just compute straight away
-        shared_secret = ModularArithmetic.square_and_multiply(other_public_key, self._private_key, self.p)
-        return shared_secret
-
-
-def run_mitm_demo():
-    log_title("SCENARIO B: Small Subgroup Confinement Attack")
-
-    # 1. Setup
-    p = DH_2048_P
-    g = DH_2048_G
-
-    # Naive burak is initialized
-    burak = NaiveBurak(p, g)
-    log_actor("burak (Naive)", "Waiting for arda's Public Key...", "", Colors.GREEN)
-
-    # 2. Mallory Intercepts
-    log_actor("arda", "Sends Public Key A", "Points to -> burak", Colors.BLUE)
-    log_attack("INTERCEPTION", "Mallory blocks arda's key.")
-
-    # 3. Injection (The Attack)
-    # Mallory sends p-1 (which is -1 mod p). This has Order 2.
-    # The result will be (-1)^b.
-    # If b is even -> 1. If b is odd -> p-1.
-    malicious_key = p - 1
-    log_attack("INJECTION", f"Mallory sends (P - 1) to burak.")
-
-    # 4. burak Computes Shared Secret
-    # burak thinks 'malicious_key' is arda.
-    try:
-        buraks_secret = burak.generate_shared_secret(malicious_key)
-        log_actor("burak (Naive)", "Computes Shared Secret", f"Value: {str(buraks_secret)[:10]}... (Hidden)", Colors.GREEN)
-
-        # burak encrypts sensitive data
-        secret_msg = "Launch Missiles at 12:00"
-        ciphertext = simple_xor_encrypt(secret_msg, buraks_secret)
-        log_actor("burak (Naive)", "Sends Encrypted Data", f"Bytes: {ciphertext.hex()[:20]}...", Colors.GREEN)
-
-    except ValueError as e:
-        print("burak detected the attack! (This shouldn't happen in NaiveBurak)")
-        return
-
-    # 5. Mallory Brute Forces
-    print(f"\n{Colors.RED}Mallory starts Brute Force...{Colors.RESET}")
-    log_actor("Mallory", "Analyzing Subgroup...", "Generator order is 2. Search space size: 2 keys.", Colors.RED)
-
-    # There are only 2 possible secrets: 1 or p-1
-    possible_keys = [1, p - 1]
-
-    for candidate_key in possible_keys:
-        print(f"  Trying Candidate Key: {str(candidate_key)[:10]}...", end=" ")
-
-        # Attempt decrypt
-        decrypted = simple_xor_decrypt(ciphertext, candidate_key)
-
-        # Check if it looks like English text (simple heuristic)
-        if "Missiles" in decrypted:
-            print(f"{Colors.GREEN}[MATCH FOUND]{Colors.RESET}")
-            log_attack("CRACKED", f"Message: '{decrypted}'")
-            print(f"{Colors.RED}>> ATTACK SUCCESS: 2048-bit security reduced to 2 guesses.{Colors.RESET}")
-            break
-        else:
-            print(f"{Colors.YELLOW}[FAIL]{Colors.RESET}")
-
-
-if __name__ == "__main__":
-    run_mitm_demo()
-```
-
-## File: attack_lab/utils.py
-```python
-import sys
-import hashlib
-
-
-class Colors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'  # arda
-    GREEN = '\033[92m'  # burak
-    RED = '\033[91m'  # Mallory/Attacker
-    YELLOW = '\033[93m'  # System/Info
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
-
-
-def log_title(title):
-    print(f"\n{Colors.HEADER}{Colors.BOLD}=== {title} ==={Colors.RESET}")
-    print(f"{Colors.HEADER}{'=' * (len(title) + 8)}{Colors.RESET}\n")
-
-
-def log_actor(name, action, detail="", color=Colors.RESET):
-    print(f"{color}{Colors.BOLD}[{name}]{Colors.RESET} {action}")
-    if detail:
-        print(f"    {Colors.YELLOW}↳ {detail}{Colors.RESET}")
-
-
-def log_attack(action, result):
-    print(f"{Colors.RED}{Colors.BOLD}[ATTACK]{Colors.RESET} {action}")
-    print(f"    {Colors.RED}↳ RESULT: {result}{Colors.RESET}")
-
-
-def simple_xor_encrypt(message: str, shared_secret_int: int) -> bytes:
-    """
-    A toy encryption for demonstration.
-    Hashes the integer shared secret to get a key, then XORs the message.
-    """
-    # 1. Derive a key from the shared secret integer
-    key_hash = hashlib.sha256(str(shared_secret_int).encode()).digest()
-
-    # 2. XOR encrypt
-    msg_bytes = message.encode()
-    encrypted = bytearray()
-    for i, b in enumerate(msg_bytes):
-        encrypted.append(b ^ key_hash[i % len(key_hash)])
-    return bytes(encrypted)
-
-
-def simple_xor_decrypt(ciphertext: bytes, shared_secret_int: int) -> str:
-    """Decrypts the XOR message."""
-    key_hash = hashlib.sha256(str(shared_secret_int).encode()).digest()
-    decrypted = bytearray()
-    for i, b in enumerate(ciphertext):
-        decrypted.append(b ^ key_hash[i % len(key_hash)])
-    return decrypted.decode('utf-8', errors='ignore')
-```
-
-## File: attack_visualizer/static/script.js
-```javascript
-const socket = io();
-
-// UI Elements
-const packet = document.getElementById('active-packet');
-const logContainer = document.getElementById('log-container');
-const malloryNode = document.getElementById('node-mallory');
-
-// --- Control Functions ---
-function startHandshake(type) {
-    socket.emit('init_handshake', {type: type});
-}
-
-function toggleAttack() {
-    socket.emit('toggle_attack');
-}
-
-function leakKey() {
-    socket.emit('leak_key');
-}
-
-// --- WebSocket Handlers ---
-
-socket.on('log', (data) => {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    const time = new Date().toLocaleTimeString();
-    entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-source">${data.source}:</span> ${data.msg}`;
-    logContainer.prepend(entry);
-});
-
-socket.on('update_mallory', (data) => {
-    if(data.active) {
-        malloryNode.classList.add('active');
-        document.getElementById('status-mallory').innerText = "Mode: INTERCEPTING";
-    } else {
-        malloryNode.classList.remove('active');
-        document.getElementById('status-mallory').innerText = "Mode: Passive";
-    }
-});
-
-socket.on('anim_packet', (data) => {
-    // Show packet
-    packet.style.opacity = '1';
-    packet.innerHTML = `<i class="fas fa-key"></i>`;
-    packet.style.left = '10%'; // Start at arda
-    packet.style.transition = 'none';
-
-    // Trigger Reflow
-    void packet.offsetWidth;
-
-    // Animate
-    packet.style.transition = 'left 2s ease-in-out';
-
-    if (data.intercepted) {
-        // Stop at Mallory
-        packet.style.left = '50%';
-        setTimeout(() => {
-            packet.innerHTML = `<i class="fas fa-skull"></i>`; // Change to malicious
-            packet.style.backgroundColor = '#da3633';
-            packet.style.color = '#fff';
-
-            // Resume to burak after brief pause
-            setTimeout(() => {
-                packet.style.left = '90%';
-                setTimeout(() => {
-                    packet.style.opacity = '0';
-                    socket.emit('complete_handshake'); // Tell server animation is done
-                }, 2000);
-            }, 1000);
-        }, 2000);
-    } else {
-        // Go straight to burak
-        packet.style.left = '90%';
-        setTimeout(() => {
-            packet.style.opacity = '0';
-            socket.emit('complete_handshake');
-        }, 2000);
-    }
-});
-
-socket.on('update_status', (data) => {
-    const el = document.getElementById(`status-${data.actor}`);
-    const keyEl = document.getElementById(`key-${data.actor}`);
-
-    el.innerText = data.status.toUpperCase();
-    keyEl.innerText = `Secret: ${data.secret}`;
-
-    if (data.status === 'compromised') el.style.color = '#da3633';
-    if (data.status === 'secure') el.style.color = '#2ea043';
-});
-
-socket.on('anim_leak', (data) => {
-    const burak = document.getElementById('node-burak');
-    burak.style.boxShadow = "0 0 30px #da3633";
-    setTimeout(() => { burak.style.boxShadow = "none"; }, 500);
-});
-```
-
-## File: attack_visualizer/static/style.css
-```css
-body {
-    background-color: #0d1117;
-    color: #c9d1d9;
-    font-family: 'Consolas', 'Courier New', monospace;
-    margin: 0;
-    padding: 20px;
-}
-
-.header {
-    text-align: center;
-    border-bottom: 1px solid #30363d;
-    padding-bottom: 20px;
-    margin-bottom: 40px;
-}
-
-.highlight { color: #58a6ff; }
-
-.controls button {
-    background: #21262d;
-    border: 1px solid #30363d;
-    color: white;
-    padding: 10px 20px;
-    margin: 0 5px;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-}
-
-.controls button:hover { background: #30363d; }
-.controls .btn-red { border-color: #da3633; color: #da3633; }
-.controls .btn-red:hover { background: #da3633; color: white; }
-.controls .btn-warning { border-color: #d29922; color: #d29922; }
-
-/* NETWORK GRID */
-.network-grid {
-    display: grid;
-    grid-template-columns: 1fr 2fr 1fr;
-    gap: 20px;
-    height: 400px;
-    align-items: center;
-}
-
-.node {
-    background: #161b22;
-    border: 1px solid #30363d;
-    padding: 20px;
-    border-radius: 12px;
-    text-align: center;
-    position: relative;
-    transition: transform 0.3s;
-}
-
-.node.attacker {
-    border-color: #da3633;
-    opacity: 0.5;
-}
-.node.attacker.active {
-    opacity: 1;
-    box-shadow: 0 0 20px rgba(218, 54, 51, 0.4);
-}
-
-.icon { font-size: 3em; margin-bottom: 10px; }
-#node-arda .icon { color: #58a6ff; }
-#node-burak .icon { color: #2ea043; }
-#node-mallory .icon { color: #da3633; }
-
-.key-display {
-    background: #0d1117;
-    padding: 5px;
-    font-size: 0.8em;
-    color: #8b949e;
-    margin-top: 10px;
-    border-radius: 4px;
-}
-
-/* ANIMATION ELEMENTS */
-.channel-zone {
-    position: relative;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}
-
-.wire {
-    position: absolute;
-    top: 50%;
-    width: 100%;
-    height: 2px;
-    background: #30363d;
-    z-index: -1;
-}
-
-.packet {
-    position: absolute;
-    top: 45%;
-    left: 10%; /* Start at arda */
-    background: #ffffff;
-    color: #000;
-    padding: 5px 10px;
-    border-radius: 15px;
-    font-size: 0.8em;
-    opacity: 0; /* Hidden by default */
-    box-shadow: 0 0 10px #fff;
-}
-
-/* LOGS */
-.log-panel {
-    margin-top: 30px;
-    background: #161b22;
-    border: 1px solid #30363d;
-    padding: 15px;
-    height: 200px;
-    overflow-y: auto;
-    font-family: monospace;
-}
-.log-entry { margin: 5px 0; border-bottom: 1px solid #21262d; }
-.log-source { font-weight: bold; color: #58a6ff; }
-.log-time { color: #8b949e; font-size: 0.8em; margin-right: 10px; }
-```
-
-## File: attack_visualizer/templates/index.html
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>DH Vulnerability Simulator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- FontAwesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-</head>
-<body>
-
-<div class="header">
-    <h1>Diffie-Hellman Protocol <span class="highlight">Attack Lab</span></h1>
-    <div class="controls">
-        <button onclick="startHandshake('ephemeral')"><i class="fas fa-sync"></i> Ephemeral Handshake (Secure)</button>
-        <button onclick="startHandshake('static')"><i class="fas fa-lock"></i> Static Handshake (Risky)</button>
-        <button onclick="toggleAttack()" class="btn-red"><i class="fas fa-user-secret"></i> Toggle MitM Attack</button>
-        <button onclick="leakKey()" class="btn-warning"><i class="fas fa-radiation"></i> Leak burak's Key</button>
-    </div>
-</div>
-
-<div class="network-grid">
-    <!-- arda -->
-    <div class="node" id="node-arda">
-        <div class="icon"><i class="fas fa-user-shield"></i></div>
-        <h2>arda</h2>
-        <div class="status-box">Status: <span id="status-arda">Idle</span></div>
-        <div class="key-display" id="key-arda">Shared Secret: ???</div>
-    </div>
-
-    <!-- THE CHANNEL (MALLORY) -->
-    <div class="channel-zone">
-        <div class="wire"></div>
-        <div class="packet" id="active-packet"><i class="fas fa-envelope"></i></div>
-
-        <div class="node attacker" id="node-mallory">
-            <div class="icon"><i class="fas fa-user-secret"></i></div>
-            <h2>Mallory</h2>
-            <div class="status-box" id="status-mallory">Mode: Passive</div>
-            <div class="hack-console" id="hack-console">Waiting for traffic...</div>
-        </div>
-    </div>
-
-    <!-- burak -->
-    <div class="node" id="node-burak">
-        <div class="icon"><i class="fas fa-server"></i></div>
-        <h2>burak</h2>
-        <div class="status-box">Status: <span id="status-burak">Idle</span></div>
-        <div class="key-display" id="key-burak">Shared Secret: ???</div>
-    </div>
-</div>
-
-<div class="log-panel">
-    <h3><i class="fas fa-terminal"></i> Simulation Logs</h3>
-    <div id="log-container"></div>
-</div>
-
-<script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
-```
-
-## File: attack_visualizer/app.py
-```python
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from crypto_engine.protocols import DiffieHellmanProtocol
-from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
-
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-# Simulation State
-STATE = {
-    "arda": None,
-    "burak": None,
-    "mallory_active": False,
-    "messages": []
-}
-
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-
-@socketio.on('init_handshake')
-def handle_handshake(data):
-    """Scenario: Normal DH Handshake"""
-    scenario_type = data.get('type')  # 'static' or 'ephemeral'
-
-    # 1. arda Generates Key
-    STATE['arda'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-    emit('log', {'source': 'arda', 'msg': f'Generated Private Key: {str(STATE["arda"]._private_key)[:6]}...'})
-    emit('anim_key_gen', {'target': 'arda'})
-
-    # 2. burak Generates Key (Static or New)
-    if scenario_type == 'static' and STATE['burak']:
-        emit('log', {'source': 'burak', 'msg': 'Using STATIC Private Key (No Refresh)'})
-    else:
-        STATE['burak'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
-        emit('log', {'source': 'burak', 'msg': f'Generated Ephemeral Key: {str(STATE["burak"]._private_key)[:6]}...'})
-        emit('anim_key_gen', {'target': 'burak'})
-
-    # 3. Public Key Exchange Animation
-    emit('anim_packet', {
-        'from': 'arda', 'to': 'burak',
-        'payload': f'PubA: {str(STATE["arda"].public_key)[:10]}...',
-        'intercepted': STATE['mallory_active']
-    })
-
-
-@socketio.on('complete_handshake')
-def finalize_handshake():
-    """Calculates shared secrets after animation finishes"""
-    if STATE['mallory_active']:
-        # ATTACK: Subgroup Confinement
-        # Mallory injects P-1
-        p_minus_1 = DH_2048_P - 1
-
-        # burak computes secret using P-1
-        # In a real library this raises an error, here we force it for demo
-        # burak's Secret = (P-1)^b mod P
-        burak_secret = pow(p_minus_1, STATE['burak']._private_key, DH_2048_P)
-
-        emit('log', {'source': 'Mallory', 'msg': 'ATTACK: Injected (P-1) as Public Key!'})
-        emit('log', {'source': 'burak', 'msg': 'Computed Shared Secret (CORRUPTED)'})
-        emit('update_status', {'actor': 'burak', 'status': 'compromised', 'secret': str(burak_secret)})
-        emit('update_status', {'actor': 'mallory', 'status': 'cracked', 'secret': '1 or P-1'})
-
-    else:
-        # Normal DH
-        arda_s = STATE['arda'].generate_shared_secret(STATE['burak'].public_key)
-        burak_s = STATE['burak'].generate_shared_secret(STATE['arda'].public_key)
-
-        emit('log', {'source': 'System', 'msg': 'Handshake Secure. Channel Established.'})
-        emit('update_status', {'actor': 'arda', 'status': 'secure', 'secret': str(arda_s)[:10]})
-        emit('update_status', {'actor': 'burak', 'status': 'secure', 'secret': str(burak_s)[:10]})
-
-
-@socketio.on('toggle_attack')
-def toggle_attack():
-    STATE['mallory_active'] = not STATE['mallory_active']
-    status = "ACTIVE" if STATE['mallory_active'] else "IDLE"
-    emit('log', {'source': 'Mallory', 'msg': f'Interception Mode: {status}'})
-    emit('update_mallory', {'active': STATE['mallory_active']})
-
-
-@socketio.on('leak_key')
-def leak_key():
-    """Forward Secrecy Demo: Leak burak's Key"""
-    if not STATE['burak']: return
-    key = str(STATE['burak']._private_key)
-    emit('log', {'source': 'System', 'msg': f'CRITICAL: burak\'s Key LEAKED: {key[:10]}...'})
-    emit('anim_leak', {'key': key})
-
-
-if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
+1.  [ ] **Zoom Level:** Ensure browser zoom is set so the Chat and Network are both visible without scrolling.
+2.  **Language:** Explain that "Arda" is the Client and "Burak" is the Server.
+3.  **Pacing:** Don't click too fast. Let the packet animation finish before speaking.
+4.  **Reset:** Refresh the page between Act 2 and Act 3 to clear the timeline and visual clutter.
 ```
 
 ## File: attack_visualizer/requirements.txt
@@ -2701,6 +2146,7 @@ __pycache__/
 # Custom
 Implementation-Plan-Task-Lists.md
 references/
+docs/
 repomix.config.json
 ```
 
@@ -2800,6 +2246,691 @@ COPY benchmark_suite /app/benchmark_suite
 
 # Benchmark scriptini çalıştır
 CMD ["python", "-m", "benchmark_suite.benchmark"]
+```
+
+## File: attack_visualizer/static/script.js
+```javascript
+const socket = io();
+let isInterceptMode = false;
+
+// DOM Elements
+const modal = document.getElementById('intercept-modal');
+const chatInput = document.getElementById('msg-input');
+const chatBtn = document.getElementById('btn-send');
+const chatDisplay = document.getElementById('chat-display');
+const timelineDiv = document.getElementById('timeline-bar');
+const narrator = document.getElementById('narrator-text');
+
+// --- Controls ---
+function startHandshake(type) {
+    socket.emit('init_handshake', {type: type});
+    chatInput.disabled = true;
+    chatBtn.disabled = true;
+    document.getElementById('encryption-status').innerText = "Anahtar Bekleniyor...";
+}
+
+function toggleInterception() {
+    isInterceptMode = document.getElementById('intercept-toggle').checked;
+    socket.emit('toggle_interception', {active: isInterceptMode});
+    const node = document.getElementById('node-mallory');
+    if(isInterceptMode) {
+        node.classList.add('active');
+        document.getElementById('mallory-status').innerText = "Aktif (Durduracak)";
+    } else {
+        node.classList.remove('active');
+        document.getElementById('mallory-status').innerText = "Pasif";
+    }
+}
+
+function leakKey() {
+    socket.emit('leak_key');
+}
+
+function forwardPacket() {
+    // Get selected radio option
+    const options = document.getElementsByName('inject');
+    let selected = 'original';
+    for(let op of options) if(op.checked) selected = op.value;
+
+    modal.style.display = 'none';
+    socket.emit('packet_forwarded', {inject_type: selected});
+}
+
+function sendMessage() {
+    const txt = chatInput.value;
+    if(!txt) return;
+
+    // Show local message
+    addChatBubble(txt, 'sent');
+    socket.emit('send_chat', {msg: txt});
+    chatInput.value = '';
+}
+
+function addChatBubble(text, type, subtitle="") {
+    const div = document.createElement('div');
+    div.className = `chat-bubble chat-${type}`;
+    div.innerText = text;
+    if(subtitle) {
+        const sub = document.createElement('div');
+        sub.style.fontSize = "0.7em";
+        sub.style.opacity = "0.8";
+        sub.innerText = subtitle;
+        div.appendChild(sub);
+    }
+    chatDisplay.appendChild(div);
+    chatDisplay.scrollTop = chatDisplay.scrollHeight;
+}
+
+// --- Socket Events ---
+
+socket.on('log', (data) => {
+    const container = document.getElementById('log-container');
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.innerHTML = `<span class="log-source">[${data.source}]</span> ${data.msg}`;
+    container.prepend(div);
+});
+
+socket.on('narrate', (data) => {
+    narrator.style.opacity = 0;
+    setTimeout(() => {
+        narrator.innerText = data.text;
+        narrator.style.opacity = 1;
+    }, 200);
+});
+
+// Animation: Packet Start
+socket.on('anim_packet_start', (data) => {
+    const pkt = document.getElementById('active-packet');
+    pkt.style.transition = 'none';
+    pkt.style.left = '10%';
+    pkt.style.opacity = '1';
+
+    // Force Reflow
+    void pkt.offsetWidth;
+
+    pkt.style.transition = 'left 1.5s linear';
+    pkt.style.left = '50%'; // Move to Mallory/Middle
+
+    setTimeout(() => {
+        if(data.intercept_mode) {
+            // STOP and Open Modal
+            document.getElementById('modal-original-payload').innerText = data.original_payload;
+            modal.style.display = 'block';
+        } else {
+            // Continue automatically
+            socket.emit('packet_forwarded', {inject_type: 'original'});
+        }
+    }, 1500);
+});
+
+// Animation: Packet End
+socket.on('anim_packet_end', (data) => {
+    const pkt = document.getElementById('active-packet');
+    pkt.style.left = '90%'; // Move to Burak
+    setTimeout(() => {
+        pkt.style.opacity = '0';
+    }, 1000);
+});
+
+socket.on('handshake_complete', (data) => {
+    chatInput.disabled = false;
+    chatBtn.disabled = false;
+    const badge = document.getElementById('encryption-status');
+    const ardaKey = document.getElementById('key-arda');
+    const burakKey = document.getElementById('key-burak');
+
+    if(data.secure) {
+        badge.innerText = "AES-256 (Güvenli)";
+        badge.style.color = "#22c55e";
+        ardaKey.innerText = "Sır: Eşleşti ✅";
+        burakKey.innerText = "Sır: Eşleşti ✅";
+    } else {
+        badge.innerText = "KIRILDI (Güvensiz)";
+        badge.style.color = "#ef4444";
+        ardaKey.innerText = "Sır: Uyuşmazlık ❌";
+        burakKey.innerText = "Sır: Ele Geçirildi ⚠️";
+    }
+
+    document.querySelector('.chat-placeholder').style.display = 'none';
+});
+
+socket.on('chat_delivery', (data) => {
+    if(data.success) {
+        addChatBubble(data.decrypted, 'received');
+    } else {
+        addChatBubble("???????", 'received', '(Şifre Çözülemedi)');
+    }
+});
+
+socket.on('update_history', (history) => {
+    timelineDiv.innerHTML = '';
+    if(history.length === 0) {
+        timelineDiv.innerHTML = '<div class="timeline-empty">Oturum Yok</div>';
+        return;
+    }
+
+    history.forEach(h => {
+        const el = document.createElement('div');
+        el.className = 'timeline-item';
+        if(h.is_compromised) el.classList.add('compromised');
+
+        el.innerHTML = `
+            <span>${h.time}</span>
+            <i class="fas ${h.is_compromised ? 'fa-lock-open' : 'fa-lock'}"></i>
+        `;
+        timelineDiv.appendChild(el);
+    });
+});
+
+socket.on('anim_leak', () => {
+    const b = document.getElementById('node-burak');
+    b.style.boxShadow = "0 0 30px #ef4444";
+    setTimeout(()=> b.style.boxShadow = "none", 1000);
+});
+```
+
+## File: attack_visualizer/static/style.css
+```css
+body {
+    background-color: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* HEADER */
+.header {
+    background: #1e293b;
+    padding: 15px 30px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.header h1 { margin: 0; font-size: 1.5rem; }
+.highlight { color: #38bdf8; }
+
+.narrator-box {
+    background: #334155;
+    padding: 10px 20px;
+    border-radius: 20px;
+    border-left: 4px solid #38bdf8;
+    max-width: 50%;
+    font-size: 0.9rem;
+}
+
+/* LAYOUT */
+.main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.simulation-panel {
+    flex: 2;
+    padding: 20px;
+    border-right: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+}
+
+.comms-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e293b;
+}
+
+/* CONTROLS */
+.controls-bar {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.2s;
+}
+.btn-primary { background: #38bdf8; color: #0f172a; }
+.btn-primary:hover { background: #0ea5e9; }
+.btn-secondary { background: #475569; color: #fff; }
+.btn-leak { background: #ef4444; color: #fff; width: 100%; margin-top: 10px;}
+.btn-forward { background: #22c55e; color: #fff; width: 100%; padding: 12px; font-size: 1.1em;}
+
+/* TOGGLE SWITCH */
+.switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: #ef4444; }
+input:checked + .slider:before { transform: translateX(26px); }
+.switch-label { font-size: 0.9em; font-weight: bold; margin-left: 10px;}
+
+/* NETWORK GRID */
+.network-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: 10px;
+    height: 300px;
+    align-items: center;
+}
+.node { background: #1e293b; padding: 20px; border-radius: 12px; text-align: center; border: 2px solid #334155; position: relative;}
+.node.attacker { border-color: #ef4444; border-style: dashed; opacity: 0.3; transition: 0.3s; }
+.node.attacker.active { opacity: 1; box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
+
+.channel-zone { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column;}
+.wire { position: absolute; width: 100%; height: 2px; background: #475569; z-index: 0; top: 50%; }
+.packet {
+    position: absolute; top: 43%; left: 10%;
+    background: #fff; color: #000; padding: 8px 15px;
+    border-radius: 20px; z-index: 10; font-size: 0.8em;
+    box-shadow: 0 0 10px #fff; opacity: 0;
+}
+
+/* TIMELINE (Forward Secrecy) */
+.timeline-container {
+    margin-top: auto;
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 10px;
+}
+.timeline {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding: 10px 0;
+}
+.timeline-item {
+    min-width: 60px;
+    height: 60px;
+    background: #334155;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    font-size: 0.7em;
+    border-bottom: 4px solid #22c55e; /* Default Secure */
+    transition: 0.5s;
+}
+.timeline-item.compromised { border-bottom-color: #ef4444; background: rgba(239,68,68,0.2); }
+.timeline-empty { color: #64748b; font-style: italic; width: 100%; text-align: center;}
+
+/* CHAT */
+.chat-module { flex: 2; display: flex; flex-direction: column; border-bottom: 1px solid #334155; }
+.chat-header { padding: 10px; background: #0f172a; font-weight: bold; display: flex; justify-content: space-between; }
+.badge-enc { font-size: 0.7em; background: #334155; padding: 2px 6px; border-radius: 4px; }
+.chat-window { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.chat-placeholder { text-align: center; color: #475569; margin-top: 50px; }
+.chat-bubble { padding: 8px 12px; border-radius: 8px; max-width: 80%; font-size: 0.9em; }
+.chat-sent { align-self: flex-end; background: #38bdf8; color: #0f172a; }
+.chat-received { align-self: flex-start; background: #334155; }
+.chat-intercepted { align-self: center; border: 1px solid #ef4444; color: #ef4444; font-size: 0.8em;}
+.chat-input-area { padding: 10px; display: flex; gap: 5px; }
+.chat-input-area input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white; }
+
+/* LOGS */
+.log-module { flex: 1; overflow-y: auto; padding: 10px; background: #000; font-family: monospace; font-size: 0.8em; }
+.log-entry { margin-bottom: 4px; }
+.log-source { color: #38bdf8; font-weight: bold; }
+
+/* MODAL */
+.modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); }
+.modal-content {
+    background-color: #1e293b; margin: 15% auto; padding: 0; border: 1px solid #334155;
+    width: 400px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 50px rgba(0,0,0,0.5);
+}
+.modal-header { background: #ef4444; padding: 15px; text-align: center; font-weight: bold; color: white;}
+.modal-body { padding: 20px; }
+.option-row { margin: 10px 0; padding: 10px; background: #0f172a; border-radius: 6px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.option-row:hover { background: #334155; }
+.payload-preview { margin-top: 15px; padding: 10px; background: #000; font-family: monospace; font-size: 0.8em; color: #22c55e; }
+.danger { color: #ef4444; font-weight: bold; }
+.safe { color: #22c55e; }
+```
+
+## File: attack_visualizer/templates/index.html
+```html
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>DH Saldırı Laboratuvarı</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+<!-- INTERCEPTION MODAL (Hidden by default) -->
+<div id="intercept-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-hand-paper"></i> Paket Yakalandı!</h2>
+        </div>
+        <div class="modal-body">
+            <p>Arda'nın gönderdiği Açık Anahtar (Public Key) şu an elinizde.</p>
+            <div class="injection-options">
+                <label>Burak'a ne göndermek istersiniz?</label>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-original" value="original" checked>
+                    <label for="opt-original" class="safe">Orjinal Anahtar (Saldırı Yok)</label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-subgroup" value="subgroup">
+                    <label for="opt-subgroup" class="danger">Alt Grup Saldırısı (P-1 Enjekte Et)</label>
+                    <small>Burak'ın ortak sırrını 1 veya -1 olmaya zorlar.</small>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-random" value="random">
+                    <label for="opt-random" class="warning">Rastgele Veri (DoS)</label>
+                </div>
+            </div>
+            <div class="payload-preview">
+                Orijinal Veri: <span id="modal-original-payload">...</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="forwardPacket()" class="btn-forward">Paketi İlet <i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+</div>
+
+<div class="header">
+    <h1>Diffie-Hellman <span class="highlight">Etkileşimli Saldırı Laboratuvarı</span></h1>
+    <div class="narrator-box">
+        <i class="fas fa-info-circle info-icon"></i>
+        <span id="narrator-text">Laboratuvara hoş geldiniz. Başlamak için bir el sıkışma yöntemi seçin.</span>
+    </div>
+</div>
+
+<div class="main-layout">
+    <!-- LEFT: Controls & Network -->
+    <div class="simulation-panel">
+        <div class="controls-bar">
+            <button onclick="startHandshake('ephemeral')" class="btn-primary"><i class="fas fa-sync"></i> Yeni Oturum (Ephemeral)</button>
+            <button onclick="startHandshake('static')" class="btn-secondary"><i class="fas fa-lock"></i> Statik Oturum</button>
+            <div class="divider"></div>
+            <label class="switch">
+                <input type="checkbox" id="intercept-toggle" onchange="toggleInterception()">
+                <span class="slider round"></span>
+            </label>
+            <span class="switch-label">Manuel Müdahale Modu</span>
+        </div>
+
+        <div class="network-grid">
+            <!-- ARDA -->
+            <div class="node" id="node-arda">
+                <div class="icon"><i class="fas fa-user-shield"></i></div>
+                <h3>Arda</h3>
+                <div class="key-display" id="key-arda">Sır: -</div>
+            </div>
+
+            <!-- CHANNEL -->
+            <div class="channel-zone">
+                <div class="wire"></div>
+                <div class="packet" id="active-packet"><i class="fas fa-key"></i></div>
+
+                <div class="node attacker" id="node-mallory">
+                    <div class="icon"><i class="fas fa-user-secret"></i></div>
+                    <h3>Mallory</h3>
+                    <div class="status-badge" id="mallory-status">Pasif</div>
+                </div>
+            </div>
+
+            <!-- BURAK -->
+            <div class="node" id="node-burak">
+                <div class="icon"><i class="fas fa-server"></i></div>
+                <h3>Burak</h3>
+                <div class="key-display" id="key-burak">Sır: -</div>
+            </div>
+        </div>
+
+        <!-- Session History Visualizer -->
+        <div class="timeline-container">
+            <h4><i class="fas fa-history"></i> İleriye Dönük Gizlilik Zaman Çizelgesi</h4>
+            <div class="timeline" id="timeline-bar">
+                <!-- Timeline items will be injected here -->
+                <div class="timeline-empty">Henüz oturum yok</div>
+            </div>
+            <button onclick="leakKey()" class="btn-leak"><i class="fas fa-radiation"></i> Burak'ın Anahtarını Sızdır</button>
+        </div>
+    </div>
+
+    <!-- RIGHT: Live Chat & Logs -->
+    <div class="comms-panel">
+        <!-- Secure Chat Emulator -->
+        <div class="chat-module">
+            <div class="chat-header">
+                <i class="fas fa-comments"></i> Güvenli Mesajlaşma Testi
+                <span id="encryption-status" class="badge-enc">Şifreleme Yok</span>
+            </div>
+            <div class="chat-window" id="chat-display">
+                <div class="chat-placeholder">El sıkışma tamamlandıktan sonra mesajlaşma başlayabilir.</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="msg-input" placeholder="Arda olarak mesaj yaz..." disabled>
+                <button onclick="sendMessage()" id="btn-send" disabled><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="log-module">
+            <div class="log-header"><i class="fas fa-terminal"></i> Sistem Logları</div>
+            <div id="log-container"></div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+```
+
+## File: attack_visualizer/app.py
+```python
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
+import sys
+import os
+import uuid
+import hashlib
+from datetime import datetime
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from crypto_engine.protocols import DiffieHellmanProtocol
+from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
+
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# State Management
+STATE = {
+    "arda": None,
+    "burak": None,
+    "mallory_intercept_mode": False,
+    "current_session_id": None,
+    "shared_secrets": {"arda": None, "burak": None, "mallory": None},
+    "history": []  # {id, time, type, compromised}
+}
+
+
+def derive_key(secret_int):
+    """Derive a simple AES-like key from the integer secret."""
+    if secret_int is None: return None
+    return hashlib.sha256(str(secret_int).encode()).hexdigest()[:16]  # 16 chars
+
+
+def xor_encrypt(msg, secret):
+    """Toy encryption for visualization."""
+    if secret is None: return msg
+    key = derive_key(secret)
+    encrypted = []
+    for i, char in enumerate(msg):
+        key_char = key[i % len(key)]
+        encrypted.append(chr(ord(char) ^ ord(key_char)))
+    return ''.join(encrypted)
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@socketio.on('init_handshake')
+def handle_handshake(data):
+    STATE['current_session_id'] = str(uuid.uuid4())[:6]
+    STATE['shared_secrets'] = {"arda": None, "burak": None, "mallory": None}
+
+    # 1. Init Arda (Always Ephemeral)
+    STATE['arda'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+
+    # 2. Init Burak (Static or Ephemeral)
+    if data['type'] == 'static' and STATE['burak']:
+        pass  # Keep existing key
+    else:
+        STATE['burak'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+
+    emit('log', {'source': 'Sistem', 'msg': 'El sıkışma başlatıldı.'})
+    emit('narrate', {'text': 'Arda Açık Anahtarını (Public Key) Burak\'a gönderiyor...'})
+
+    # 3. Animate Packet (Checks if interception is on)
+    emit('anim_packet_start', {
+        'intercept_mode': STATE['mallory_intercept_mode'],
+        'original_payload': str(STATE['arda'].public_key)[:12] + '...'
+    })
+
+
+@socketio.on('packet_forwarded')
+def handle_forward(data):
+    """Called after user manually forwards packet from modal."""
+    injection_type = data.get('inject_type')
+
+    payload_to_burak = STATE['arda'].public_key
+
+    if injection_type == 'subgroup':
+        payload_to_burak = DH_2048_P - 1  # Malicious P-1
+        STATE['shared_secrets']['mallory'] = 'DETECTED'  # Flag
+        emit('log', {'source': 'Mallory', 'msg': 'ENJEKSİYON: (P-1) değeri gönderildi.'})
+        emit('narrate', {'text': 'Mallory paketi değiştirdi! Alt Grup Saldırısı yapılıyor.'})
+    elif injection_type == 'random':
+        payload_to_burak = 123456789  # Junk
+        emit('log', {'source': 'Mallory', 'msg': 'Bozuk veri gönderildi.'})
+    else:
+        emit('log', {'source': 'Mallory', 'msg': 'Paket değiştirilmeden iletildi.'})
+        emit('narrate', {'text': 'Mallory sadece izliyor. Paket değiştirilmedi.'})
+
+    # Complete the animation to Burak
+    emit('anim_packet_end', {'success': True})
+
+    # Calculate Secrets
+    try:
+        # Burak computes based on what he received
+        burak_secret = pow(payload_to_burak, STATE['burak']._private_key, DH_2048_P)
+        STATE['shared_secrets']['burak'] = burak_secret
+
+        # Arda computes normally (assuming he got Burak's key correctly for this simplified demo)
+        arda_secret = STATE['arda'].generate_shared_secret(STATE['burak'].public_key)
+        STATE['shared_secrets']['arda'] = arda_secret
+
+        # Check security status
+        is_secure = (burak_secret == arda_secret) and (injection_type == 'original')
+
+        # Add to history
+        sess_entry = {
+            'id': STATE['current_session_id'],
+            'time': datetime.now().strftime("%H:%M:%S"),
+            'burak_priv_ref': STATE['burak']._private_key,
+            'is_compromised': False  # Will change if key leaks
+        }
+        if not is_secure: sess_entry['is_compromised'] = True  # Immediately broken if MitM
+
+        STATE['history'].insert(0, sess_entry)
+        if len(STATE['history']) > 8: STATE['history'].pop()
+
+        emit('update_history', STATE['history'])
+        emit('handshake_complete', {'secure': is_secure})
+
+    except Exception as e:
+        print(e)
+
+
+@socketio.on('send_chat')
+def handle_chat(data):
+    """Encrypts message with calculated keys."""
+    msg = data['msg']
+
+    # Arda encrypts
+    cipher = xor_encrypt(msg, STATE['shared_secrets']['arda'])
+
+    # Send visualization
+    emit('anim_chat', {'cipher': cipher[:10] + '...'})
+
+    # Burak decrypts
+    try:
+        decrypted = xor_encrypt(cipher, STATE['shared_secrets']['burak'])
+    except:
+        decrypted = "????"
+
+    # Check validity (simple check)
+    success = (decrypted == msg)
+
+    emit('chat_delivery', {
+        'original': msg,
+        'cipher': cipher,  # In real app, hex encode this
+        'decrypted': decrypted,
+        'success': success
+    })
+
+    # If Mallory did Subgroup attack, show she can read it
+    if STATE['shared_secrets']['mallory'] == 'DETECTED':
+        # Mallory tries keys 1 and P-1.
+        # For demo, if MitM was active, we assume she cracked it.
+        emit('log', {'source': 'Mallory', 'msg': f'Mesaj Çözüldü: "{msg}"'})
+
+
+@socketio.on('toggle_interception')
+def toggle(data):
+    STATE['mallory_intercept_mode'] = data['active']
+    msg = "Aktif (Paketleri Durduracak)" if data['active'] else "Pasif"
+    emit('narrate', {'text': f'Mallory Müdahale Modu: {msg}'})
+    emit('mallory_state', {'active': data['active']})
+
+
+@socketio.on('leak_key')
+def leak_key():
+    if not STATE['burak']: return
+    leaked_key = STATE['burak']._private_key
+
+    emit('narrate', {'text': 'KRİTİK: Burak\'ın sunucusu hacklendi! Anahtar sızdı.'})
+    emit('anim_leak', {})
+
+    # Update History based on Key Reference (Forward Secrecy Logic)
+    affected_count = 0
+    for sess in STATE['history']:
+        if sess['burak_priv_ref'] == leaked_key:
+            sess['is_compromised'] = True
+            affected_count += 1
+
+    emit('update_history', STATE['history'])
+    emit('log', {'source': 'Sistem', 'msg': f'{affected_count} geçmiş oturumun şifresi çözüldü.'})
+
+
+if __name__ == '__main__':
+    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
 ```
 
 ## File: benchmark_suite/benchmark.py

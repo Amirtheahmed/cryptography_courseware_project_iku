@@ -2,96 +2,130 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>DH Zafiyet Simülatörü</title>
+    <title>DH Saldırı Laboratuvarı</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
-<div class="header">
-    <h1>Diffie-Hellman <span class="highlight">Saldırı Laboratuvarı</span></h1>
-
-    <!-- Real-time Narrator Box -->
-    <div class="narrator-box">
-        <i class="fas fa-info-circle info-icon"></i>
-        <span id="narrator-text">Simülasyon başlatılmaya hazır. Lütfen bir eylem seçin.</span>
-    </div>
-
-    <div class="controls">
-        <div class="control-group">
-            <span class="label">El Sıkışma Türü:</span>
-            <button onclick="startHandshake('ephemeral')"><i class="fas fa-sync"></i> Geçici (Ephemeral)</button>
-            <button onclick="startHandshake('static')"><i class="fas fa-lock"></i> Statik (Riskli)</button>
+<!-- INTERCEPTION MODAL (Hidden by default) -->
+<div id="intercept-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-hand-paper"></i> Paket Yakalandı!</h2>
         </div>
-        <div class="control-group">
-            <span class="label">Saldırı Araçları:</span>
-            <button onclick="toggleAttack()" class="btn-red" id="btn-mitm"><i class="fas fa-user-secret"></i> MitM (Alt Grup)</button>
-            <button onclick="leakKey()" class="btn-warning"><i class="fas fa-radiation"></i> Anahtarı Sızdır (FS Test)</button>
+        <div class="modal-body">
+            <p>Arda'nın gönderdiği Açık Anahtar (Public Key) şu an elinizde.</p>
+            <div class="injection-options">
+                <label>Burak'a ne göndermek istersiniz?</label>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-original" value="original" checked>
+                    <label for="opt-original" class="safe">Orjinal Anahtar (Saldırı Yok)</label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-subgroup" value="subgroup">
+                    <label for="opt-subgroup" class="danger">Alt Grup Saldırısı (P-1 Enjekte Et)</label>
+                    <small>Burak'ın ortak sırrını 1 veya -1 olmaya zorlar.</small>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="inject" id="opt-random" value="random">
+                    <label for="opt-random" class="warning">Rastgele Veri (DoS)</label>
+                </div>
+            </div>
+            <div class="payload-preview">
+                Orijinal Veri: <span id="modal-original-payload">...</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="forwardPacket()" class="btn-forward">Paketi İlet <i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
 </div>
 
-<div class="main-container">
+<div class="header">
+    <h1>Diffie-Hellman <span class="highlight">Etkileşimli Saldırı Laboratuvarı</span></h1>
+    <div class="narrator-box">
+        <i class="fas fa-info-circle info-icon"></i>
+        <span id="narrator-text">Laboratuvara hoş geldiniz. Başlamak için bir el sıkışma yöntemi seçin.</span>
+    </div>
+</div>
 
-    <!-- LEFT: Network Visualization -->
-    <div class="network-area">
+<div class="main-layout">
+    <!-- LEFT: Controls & Network -->
+    <div class="simulation-panel">
+        <div class="controls-bar">
+            <button onclick="startHandshake('ephemeral')" class="btn-primary"><i class="fas fa-sync"></i> Yeni Oturum (Ephemeral)</button>
+            <button onclick="startHandshake('static')" class="btn-secondary"><i class="fas fa-lock"></i> Statik Oturum</button>
+            <div class="divider"></div>
+            <label class="switch">
+                <input type="checkbox" id="intercept-toggle" onchange="toggleInterception()">
+                <span class="slider round"></span>
+            </label>
+            <span class="switch-label">Manuel Müdahale Modu</span>
+        </div>
+
         <div class="network-grid">
-            <!-- Arda -->
+            <!-- ARDA -->
             <div class="node" id="node-arda">
                 <div class="icon"><i class="fas fa-user-shield"></i></div>
-                <h2>Arda (İstemci)</h2>
-                <div class="status-box">Durum: <span id="status-arda">Beklemede</span></div>
-                <div class="key-display" id="key-arda">Ortak Sır: ???</div>
+                <h3>Arda</h3>
+                <div class="key-display" id="key-arda">Sır: -</div>
             </div>
 
-            <!-- CHANNEL / MALLORY -->
+            <!-- CHANNEL -->
             <div class="channel-zone">
                 <div class="wire"></div>
-                <div class="packet" id="active-packet"><i class="fas fa-envelope"></i></div>
+                <div class="packet" id="active-packet"><i class="fas fa-key"></i></div>
 
                 <div class="node attacker" id="node-mallory">
                     <div class="icon"><i class="fas fa-user-secret"></i></div>
-                    <h2>Mallory (Saldırgan)</h2>
-                    <div class="status-box" id="status-mallory">Mod: Pasif</div>
-                    <div class="hack-console" id="hack-console">Trafik bekleniyor...</div>
+                    <h3>Mallory</h3>
+                    <div class="status-badge" id="mallory-status">Pasif</div>
                 </div>
             </div>
 
-            <!-- Burak -->
+            <!-- BURAK -->
             <div class="node" id="node-burak">
                 <div class="icon"><i class="fas fa-server"></i></div>
-                <h2>Burak (Sunucu)</h2>
-                <div class="status-box">Durum: <span id="status-burak">Beklemede</span></div>
-                <div class="key-display" id="key-burak">Ortak Sır: ???</div>
+                <h3>Burak</h3>
+                <div class="key-display" id="key-burak">Sır: -</div>
+            </div>
+        </div>
+
+        <!-- Session History Visualizer -->
+        <div class="timeline-container">
+            <h4><i class="fas fa-history"></i> İleriye Dönük Gizlilik Zaman Çizelgesi</h4>
+            <div class="timeline" id="timeline-bar">
+                <!-- Timeline items will be injected here -->
+                <div class="timeline-empty">Henüz oturum yok</div>
+            </div>
+            <button onclick="leakKey()" class="btn-leak"><i class="fas fa-radiation"></i> Burak'ın Anahtarını Sızdır</button>
+        </div>
+    </div>
+
+    <!-- RIGHT: Live Chat & Logs -->
+    <div class="comms-panel">
+        <!-- Secure Chat Emulator -->
+        <div class="chat-module">
+            <div class="chat-header">
+                <i class="fas fa-comments"></i> Güvenli Mesajlaşma Testi
+                <span id="encryption-status" class="badge-enc">Şifreleme Yok</span>
+            </div>
+            <div class="chat-window" id="chat-display">
+                <div class="chat-placeholder">El sıkışma tamamlandıktan sonra mesajlaşma başlayabilir.</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="msg-input" placeholder="Arda olarak mesaj yaz..." disabled>
+                <button onclick="sendMessage()" id="btn-send" disabled><i class="fas fa-paper-plane"></i></button>
             </div>
         </div>
 
         <!-- Logs -->
-        <div class="log-panel">
-            <h3><i class="fas fa-terminal"></i> Sistem Kayıtları</h3>
+        <div class="log-module">
+            <div class="log-header"><i class="fas fa-terminal"></i> Sistem Logları</div>
             <div id="log-container"></div>
         </div>
-    </div>
-
-    <!-- RIGHT: Forward Secrecy / History Panel -->
-    <div class="history-panel">
-        <h3><i class="fas fa-history"></i> İleriye Dönük Gizlilik (Forward Secrecy)</h3>
-        <p class="history-desc">Burak'ın anahtarı sızdırıldığında geçmiş oturumların durumunu buradan izleyin.</p>
-
-        <table class="history-table">
-            <thead>
-                <tr>
-                    <th>Zaman</th>
-                    <th>Mod</th>
-                    <th>Sır İpucu</th>
-                    <th>Durum</th>
-                </tr>
-            </thead>
-            <tbody id="history-list">
-                <tr><td colspan="4" style="text-align:center; color:#666;">Henüz oturum yok</td></tr>
-            </tbody>
-        </table>
     </div>
 </div>
 
