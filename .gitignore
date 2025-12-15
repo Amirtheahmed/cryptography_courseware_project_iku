@@ -1,0 +1,19 @@
+# add default ignores for python projects
+__pycache__/
+*.py[cod]
+.env/
+*.pyo
+*.pyd
+
+
+# add ignores for common IDEs
+.vscode/
+.idea/
+
+# add ignores for macOS
+.DS_Store
+
+# Custom
+Implementation-Plan-Task-Lists.md
+references/
+repomix.config.json
