@@ -3,7 +3,7 @@ import sys
 import os
 import json
 import statistics
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 # Ensure we can import from the parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

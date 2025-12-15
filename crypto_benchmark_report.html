@@ -1,75 +1,173 @@
 
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-    <title>Cryptographic Benchmark: DH vs ECDH</title>
+    <meta charset="UTF-8">
+    <title>Kriptografik Benchmark: Diffie-Hellman vs. ECDHE</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f4f9; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
-        .chart-box { margin-bottom: 40px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #007bff; color: white; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f0f2f5; color: #333; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #1a1a1a; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-bottom: 30px; }
+        h2 { font-size: 1.2rem; color: #666; margin-top: 30px; }
+        .meta { color: #888; font-size: 0.9em; margin-bottom: 30px; border-left: 4px solid #3b82f6; padding-left: 10px; }
+
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px; }
+        .chart-box { background: #fff; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .full-width { grid-column: span 2; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.95em; }
+        th, td { border: 1px solid #e5e7eb; padding: 12px; text-align: left; }
+        th { background-color: #f8fafc; color: #1e293b; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; color: white; }
+        .badge-iot { background-color: #ef4444; } /* Kırmızı */
+        .badge-server { background-color: #22c55e; } /* Yeşil */
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>Diffie-Hellman vs. ECDHE Performance Analysis</h1>
-    <div class="meta">Generated on: <span id="date"></span> | Environment: Docker Container</div>
-
-    <div class="chart-box">
-        <h3>Execution Time Comparison (Lower is Better)</h3>
-        <canvas id="timeChart"></canvas>
+    <h1>Kripto Performans Testi: DH ve ECDHE Analizi</h1>
+    <div class="meta">
+        <strong>Oluşturulma Tarihi:</strong> <span id="date"></span><br>
+        <strong>Metodoloji:</strong> "Build, Measure, Break" - Saf Python (Pure Python) Uygulaması<br>
+        <strong>Karşılaştırma:</strong> Yüksek Performanslı Sunucu (Server) vs. Kısıtlı Kaynaklı IoT Cihazı
     </div>
 
-    <div class="chart-box">
-        <h3>Network Payload Efficiency (Lower is Better)</h3>
-        <canvas id="sizeChart"></canvas>
+    <!-- Grafikler -->
+    <div class="chart-grid">
+        <div class="chart-box full-width">
+            <h3>İşlem Süresi Karşılaştırması (Düşük Olan İyidir)</h3>
+            <p style="font-size:0.9em; color:#666;">İşlemci kaynaklarının anahtar üretimi ve el sıkışma (handshake) gecikmesine etkisi.</p>
+            <canvas id="timeChart"></canvas>
+        </div>
+
+        <div class="chart-box full-width">
+            <h3>Ağ Yükü Verimliliği (Düşük Olan İyidir)</h3>
+            <p style="font-size:0.9em; color:#666;">Açık Anahtar (Public Key) boyutu ve bant genişliği maliyeti. İşlemci gücünden bağımsızdır.</p>
+            <canvas id="sizeChart"></canvas>
+        </div>
     </div>
 
-    <h3>Detailed Data</h3>
+    <!-- Veri Tabloları -->
+    <h2>Detaylı Performans Metrikleri</h2>
     <table id="dataTable">
-        <tr><th>Algorithm</th><th>KeyGen (s)</th><th>Handshake (s)</th><th>Payload (Bytes)</th></tr>
+        <thead>
+            <tr>
+                <th>Ortam</th>
+                <th>Algoritma</th>
+                <th>Anahtar Üretimi (sn)</th>
+                <th>El Sıkışma (sn)</th>
+                <th>Toplam Süre (sn)</th>
+                <th>İşlem Kapasitesi (ops/s)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- JS ile doldurulacak -->
+        </tbody>
     </table>
 </div>
 
 <script>
-    const data = [{"algorithm": "DH-2048", "keygen_avg_sec": 0.011300579094677233, "keygen_std_sec": 0.0002896857380352945, "handshake_avg_sec": 0.0201644457061775, "handshake_std_sec": 0.00605837963041939, "payload_bytes": 256}, {"algorithm": "ECDH-256", "keygen_avg_sec": 0.012629770903731696, "keygen_std_sec": 0.00031818863364879035, "handshake_avg_sec": 0.012525333504891023, "handshake_std_sec": 0.00023244157213498664, "payload_bytes": 64}, {"algorithm": "DH-3072", "keygen_avg_sec": 0.08464814569742884, "keygen_std_sec": 0.0026029879744815633, "handshake_avg_sec": 0.1369987750047585, "handshake_std_sec": 0.015133371987753302, "payload_bytes": 384}];
-    document.getElementById('date').innerText = new Date().toLocaleString();
+    // Python'dan gelen veri buraya enjekte edilecek
+    const rawData = [{"env": "IoT", "data": [{"algorithm": "DH-2048", "keygen_avg_sec": 0.022092217500321566, "handshake_avg_sec": 0.026589985861210152, "payload_bytes": 256}, {"algorithm": "ECDH-256", "keygen_avg_sec": 0.025893168418551795, "handshake_avg_sec": 0.027571304918965325, "payload_bytes": 64}, {"algorithm": "DH-3072", "keygen_avg_sec": 0.1692065665003611, "handshake_avg_sec": 0.20212538339255842, "payload_bytes": 384}]}, {"env": "Server", "data": [{"algorithm": "DH-2048", "keygen_avg_sec": 0.011354765839641914, "handshake_avg_sec": 0.014117904243757948, "payload_bytes": 256}, {"algorithm": "ECDH-256", "keygen_avg_sec": 0.012669354921090416, "handshake_avg_sec": 0.011451840797672048, "payload_bytes": 64}, {"algorithm": "DH-3072", "keygen_avg_sec": 0.07964002910302952, "handshake_avg_sec": 0.09490649598883465, "payload_bytes": 384}]}];
 
-    // Populate Table
-    const table = document.getElementById('dataTable');
-    data.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${row.algorithm}</td><td>${row.keygen_avg_sec.toFixed(4)}</td><td>${row.handshake_avg_sec.toFixed(4)}</td><td>${row.payload_bytes}</td>`;
-        table.appendChild(tr);
-    });
+    // Tarihi Türkçe formatta yazdır
+    document.getElementById('date').innerText = new Date().toLocaleString('tr-TR');
 
-    // Chart 1: Time
+    // 1. Grafikler için Veriyi Hazırla
+    const algorithms = rawData[0].data.map(d => d.algorithm);
+    const environments = rawData.map(d => d.env);
+
+    // Renk Tanımları
+    const colors = {
+        'IoT': { bg: 'rgba(239, 68, 68, 0.7)', border: '#ef4444' },     // Kırmızı
+        'Server': { bg: 'rgba(34, 197, 94, 0.7)', border: '#22c55e' }   // Yeşil
+    };
+
+    // --- Grafik 1: Süre (Gruplandırılmış Çubuk) ---
+    const timeDatasets = rawData.map(envData => ({
+        label: envData.env + " (Toplam El Sıkışma)",
+        data: envData.data.map(d => d.keygen_avg_sec + d.handshake_avg_sec),
+        backgroundColor: colors[envData.env] ? colors[envData.env].bg : '#36a2eb',
+        borderColor: colors[envData.env] ? colors[envData.env].border : '#36a2eb',
+        borderWidth: 1
+    }));
+
     new Chart(document.getElementById('timeChart'), {
         type: 'bar',
         data: {
-            labels: data.map(d => d.algorithm),
-            datasets: [
-                { label: 'Key Generation (s)', data: data.map(d => d.keygen_avg_sec), backgroundColor: '#36a2eb' },
-                { label: 'Handshake (s)', data: data.map(d => d.handshake_avg_sec), backgroundColor: '#ff6384' }
-            ]
+            labels: algorithms,
+            datasets: timeDatasets
         },
-        options: { scales: { y: { beginAtZero: true, title: {display: true, text: 'Seconds'} } } }
+        options: {
+            responsive: true,
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    title: { display: true, text: 'Saniye (KeyGen + Handshake)' },
+                    type: 'logarithmic' // Logaritmik ölçek farkları daha iyi gösterir
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ": " + context.raw.toFixed(4) + " sn";
+                        }
+                    }
+                }
+            }
+        }
     });
 
-    // Chart 2: Size
+    // --- Grafik 2: Boyut (Basit Çubuk) ---
+    // Payload işlemciden bağımsız olduğu için ilk ortamın verisini alıyoruz.
+    const payloadData = rawData[0].data.map(d => d.payload_bytes);
+
     new Chart(document.getElementById('sizeChart'), {
         type: 'bar',
         data: {
-            labels: data.map(d => d.algorithm),
-            datasets: [{ label: 'Public Key Size (Bytes)', data: data.map(d => d.payload_bytes), backgroundColor: '#4bc0c0' }]
+            labels: algorithms,
+            datasets: [{
+                label: 'Açık Anahtar Boyutu (Byte)',
+                data: payloadData,
+                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                borderColor: '#3b82f6',
+                borderWidth: 1
+            }]
         },
-        options: { indexAxis: 'y' }
+        options: {
+            indexAxis: 'y',
+            scales: { x: { beginAtZero: true } }
+        }
     });
+
+    // --- Tabloyu Doldur ---
+    const tableBody = document.querySelector('#dataTable tbody');
+
+    rawData.forEach(envSet => {
+        envSet.data.forEach(row => {
+            const tr = document.createElement('tr');
+            const totalTime = row.keygen_avg_sec + row.handshake_avg_sec;
+            const throughput = 1 / totalTime;
+
+            // Rozet rengi belirleme
+            const badgeClass = envSet.env === 'IoT' ? 'badge-iot' : 'badge-server';
+
+            tr.innerHTML = `
+                <td><span class="badge ${badgeClass}">${envSet.env}</span></td>
+                <td><strong>${row.algorithm}</strong></td>
+                <td>${row.keygen_avg_sec.toFixed(5)}</td>
+                <td>${row.handshake_avg_sec.toFixed(5)}</td>
+                <td>${totalTime.toFixed(4)}</td>
+                <td>${throughput.toFixed(1)}</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    });
+
 </script>
 </body>
 </html>

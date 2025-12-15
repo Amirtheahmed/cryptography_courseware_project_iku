@@ -48,7 +48,7 @@ function sendMessage() {
     const txt = chatInput.value;
     if(!txt) return;
 
-    // Show local message
+    // Show local message immediately
     addChatBubble(txt, 'sent');
     socket.emit('send_chat', {msg: txt});
     chatInput.value = '';
@@ -75,8 +75,9 @@ socket.on('log', (data) => {
     const container = document.getElementById('log-container');
     const div = document.createElement('div');
     div.className = 'log-entry';
+    // Support basic colors in message if needed, but mostly use source
     div.innerHTML = `<span class="log-source">[${data.source}]</span> ${data.msg}`;
-    container.prepend(div);
+    container.prepend(div); // Add to top
 });
 
 socket.on('narrate', (data) => {
@@ -129,14 +130,14 @@ socket.on('handshake_complete', (data) => {
     const burakKey = document.getElementById('key-burak');
 
     if(data.secure) {
-        badge.innerText = "AES-256 (Güvenli)";
+        badge.innerText = "(Güvenli)";
         badge.style.color = "#22c55e";
         ardaKey.innerText = "Sır: Eşleşti ✅";
         burakKey.innerText = "Sır: Eşleşti ✅";
     } else {
         badge.innerText = "KIRILDI (Güvensiz)";
         badge.style.color = "#ef4444";
-        ardaKey.innerText = "Sır: Uyuşmazlık ❌";
+        ardaKey.innerText = "Sır: Zayıf/Uyuşmaz";
         burakKey.innerText = "Sır: Ele Geçirildi ⚠️";
     }
 

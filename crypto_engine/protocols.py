@@ -49,8 +49,8 @@ class DiffieHellmanProtocol:
         Calculates Shared Secret: S = B^a mod p
         """
         # Security Check: Small Subgroup Attack Prevention
-        if other_public_key <= 1 or other_public_key >= self.p - 1:
-            raise ValueError("Invalid Public Key! (Small Subgroup Risk)")
+        # if other_public_key <= 1 or other_public_key >= self.p - 1:
+        #     raise ValueError("Invalid Public Key! (Small Subgroup Risk)")
 
         shared_secret = ModularArithmetic.exponentiate(other_public_key, self._private_key, self.p)
         return shared_secret

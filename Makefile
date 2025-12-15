@@ -1,17 +1,35 @@
-.PHONY: build benchmark-iot benchmark-server
+.PHONY: build benchmark-compare clean
 
 build:
 	@echo "Building Crypto Workbench..."
 	docker build -t crypto-bench .
 
-# Runs benchmark inside limited container, pipes JSON to local report generator
-benchmark-iot:
-	@echo "Running Simulation: IoT / Ad-Hoc Network Node (Low CPU)..."
-	docker run --rm --cpus="0.5" --memory="128m" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
-	@echo "Opening Report..."
-	# Linux/Mac için open/xdg-open, Windows için start kullanılabilir
-	# open crypto_benchmark_report.html
+# Combined Benchmark: Runs both scenarios and merges results
+benchmark-compare:
+	@echo "\n======================================================="
+	@echo "PHASE 1: Running Simulation [IoT Node / Low Spec]"
+	@echo "Constraints: 0.5 CPU, 128MB RAM"
+	@echo "======================================================="
+	docker run --rm --cpus="0.5" --memory="128m" crypto-bench python -m benchmark_suite.benchmark > results_iot.json
 
-benchmark-server:
-	@echo "Running Simulation: High Performance Server..."
-	docker run --rm --cpus="2.0" --memory="1g" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
+	@echo "\n======================================================="
+	@echo "PHASE 2: Running Simulation [Server / High Spec]"
+	@echo "Constraints: 2.0 CPU, 1GB RAM"
+	@echo "======================================================="
+	docker run --rm --cpus="2.0" --memory="1g" crypto-bench python -m benchmark_suite.benchmark > results_server.json
+
+	@echo "\n======================================================="
+	@echo "PHASE 3: Generating Comparison Report"
+	@echo "======================================================="
+	python3 benchmark_suite/report_generator.py --env IoT=results_iot.json --env Server=results_server.json
+
+	@echo "Cleaning up temporary files..."
+	@rm results_iot.json results_server.json
+	@echo "Done! Open 'crypto_benchmark_report.html' to see the comparison."
+
+clean:
+	rm -f *.html
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+
+attack-visualizer:
+	python attack_visualizer/app.py
