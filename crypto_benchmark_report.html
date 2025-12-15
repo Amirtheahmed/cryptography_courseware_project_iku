@@ -1,0 +1,75 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cryptographic Benchmark: DH vs ECDH</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f4f9; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+        .chart-box { margin-bottom: 40px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Diffie-Hellman vs. ECDHE Performance Analysis</h1>
+    <div class="meta">Generated on: <span id="date"></span> | Environment: Docker Container</div>
+
+    <div class="chart-box">
+        <h3>Execution Time Comparison (Lower is Better)</h3>
+        <canvas id="timeChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Network Payload Efficiency (Lower is Better)</h3>
+        <canvas id="sizeChart"></canvas>
+    </div>
+
+    <h3>Detailed Data</h3>
+    <table id="dataTable">
+        <tr><th>Algorithm</th><th>KeyGen (s)</th><th>Handshake (s)</th><th>Payload (Bytes)</th></tr>
+    </table>
+</div>
+
+<script>
+    const data = [{"algorithm": "DH-2048", "keygen_avg_sec": 0.025766837593982926, "keygen_std_sec": 0.024113325376813658, "handshake_avg_sec": 0.03153084580262657, "handshake_std_sec": 0.02352587616812542, "payload_bytes": 256}, {"algorithm": "ECDH-256", "keygen_avg_sec": 0.022557516896631567, "keygen_std_sec": 0.0219389698738718, "handshake_avg_sec": 0.026570795802399516, "handshake_std_sec": 0.023815311897021244, "payload_bytes": 64}, {"algorithm": "DH-3072", "keygen_avg_sec": 0.1626172375981696, "keygen_std_sec": 0.025811362160904343, "handshake_avg_sec": 0.25979893340554555, "handshake_std_sec": 0.02675821462616564, "payload_bytes": 384}];
+    document.getElementById('date').innerText = new Date().toLocaleString();
+
+    // Populate Table
+    const table = document.getElementById('dataTable');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.algorithm}</td><td>${row.keygen_avg_sec.toFixed(4)}</td><td>${row.handshake_avg_sec.toFixed(4)}</td><td>${row.payload_bytes}</td>`;
+        table.appendChild(tr);
+    });
+
+    // Chart 1: Time
+    new Chart(document.getElementById('timeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [
+                { label: 'Key Generation (s)', data: data.map(d => d.keygen_avg_sec), backgroundColor: '#36a2eb' },
+                { label: 'Handshake (s)', data: data.map(d => d.handshake_avg_sec), backgroundColor: '#ff6384' }
+            ]
+        },
+        options: { scales: { y: { beginAtZero: true, title: {display: true, text: 'Seconds'} } } }
+    });
+
+    // Chart 2: Size
+    new Chart(document.getElementById('sizeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [{ label: 'Public Key Size (Bytes)', data: data.map(d => d.payload_bytes), backgroundColor: '#4bc0c0' }]
+        },
+        options: { indexAxis: 'y' }
+    });
+</script>
+</body>
+</html>

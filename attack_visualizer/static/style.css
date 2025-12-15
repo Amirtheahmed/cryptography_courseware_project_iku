@@ -1,0 +1,120 @@
+body {
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Consolas', 'Courier New', monospace;
+    margin: 0;
+    padding: 20px;
+}
+
+.header {
+    text-align: center;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 20px;
+    margin-bottom: 40px;
+}
+
+.highlight { color: #58a6ff; }
+
+.controls button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: white;
+    padding: 10px 20px;
+    margin: 0 5px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.controls button:hover { background: #30363d; }
+.controls .btn-red { border-color: #da3633; color: #da3633; }
+.controls .btn-red:hover { background: #da3633; color: white; }
+.controls .btn-warning { border-color: #d29922; color: #d29922; }
+
+/* NETWORK GRID */
+.network-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: 20px;
+    height: 400px;
+    align-items: center;
+}
+
+.node {
+    background: #161b22;
+    border: 1px solid #30363d;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    position: relative;
+    transition: transform 0.3s;
+}
+
+.node.attacker {
+    border-color: #da3633;
+    opacity: 0.5;
+}
+.node.attacker.active {
+    opacity: 1;
+    box-shadow: 0 0 20px rgba(218, 54, 51, 0.4);
+}
+
+.icon { font-size: 3em; margin-bottom: 10px; }
+#node-arda .icon { color: #58a6ff; }
+#node-burak .icon { color: #2ea043; }
+#node-mallory .icon { color: #da3633; }
+
+.key-display {
+    background: #0d1117;
+    padding: 5px;
+    font-size: 0.8em;
+    color: #8b949e;
+    margin-top: 10px;
+    border-radius: 4px;
+}
+
+/* ANIMATION ELEMENTS */
+.channel-zone {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.wire {
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    height: 2px;
+    background: #30363d;
+    z-index: -1;
+}
+
+.packet {
+    position: absolute;
+    top: 45%;
+    left: 10%; /* Start at arda */
+    background: #ffffff;
+    color: #000;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    opacity: 0; /* Hidden by default */
+    box-shadow: 0 0 10px #fff;
+}
+
+/* LOGS */
+.log-panel {
+    margin-top: 30px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    padding: 15px;
+    height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+}
+.log-entry { margin: 5px 0; border-bottom: 1px solid #21262d; }
+.log-source { font-weight: bold; color: #58a6ff; }
+.log-time { color: #8b949e; font-size: 0.8em; margin-right: 10px; }

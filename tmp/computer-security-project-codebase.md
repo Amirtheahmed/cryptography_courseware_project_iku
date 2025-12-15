@@ -84,24 +84,24 @@ def benchmark_dh(name, p, g, iterations=5):
     pub_key_size = 0
 
     for _ in range(iterations):
-        # 1. Key Generation (Alice)
+        # 1. Key Generation (arda)
         start = time.time()
-        alice = DiffieHellmanProtocol(p, g)
+        arda = DiffieHellmanProtocol(p, g)
         end = time.time()
         total_keygen_time += (end - start)
 
-        # Bob KeyGen (Ölçüme dahil değil ama gerekli)
-        bob = DiffieHellmanProtocol(p, g)
+        # burak KeyGen (Ölçüme dahil değil ama gerekli)
+        burak = DiffieHellmanProtocol(p, g)
 
         # 2. Shared Secret (Handshake)
         start = time.time()
-        _ = alice.generate_shared_secret(bob.public_key)
+        _ = arda.generate_shared_secret(burak.public_key)
         end = time.time()
         total_handshake_time += (end - start)
 
         # 3. Payload Size (Bytes)
         # Public Key (int) byte uzunluğu: (bit_length + 7) // 8
-        pub_key_size = (alice.public_key.bit_length() + 7) // 8
+        pub_key_size = (arda.public_key.bit_length() + 7) // 8
 
     avg_keygen = total_keygen_time / iterations
     avg_handshake = total_handshake_time / iterations
@@ -126,17 +126,17 @@ def benchmark_ecdh(name, ec_params, iterations=5):
     pub_key_size = 0
 
     for _ in range(iterations):
-        # 1. Key Generation (Alice)
+        # 1. Key Generation (arda)
         start = time.time()
-        alice = ECDHProtocol(curve, G, n)
+        arda = ECDHProtocol(curve, G, n)
         end = time.time()
         total_keygen_time += (end - start)
 
-        bob = ECDHProtocol(curve, G, n)
+        burak = ECDHProtocol(curve, G, n)
 
         # 2. Shared Secret (Handshake)
         start = time.time()
-        _ = alice.generate_shared_secret(bob.public_key)
+        _ = arda.generate_shared_secret(burak.public_key)
         end = time.time()
         total_handshake_time += (end - start)
 
@@ -533,7 +533,7 @@ from .elliptic_curve import EllipticCurve, Point
 
 2.  **Güvenlik Kontrolleri:**
     *   `DiffieHellmanProtocol` içinde `if other_public_key <= 1...` kontrolü ekledik. Bu, **Small Subgroup Confinement Attack** (Küçük Alt Grup Hapsetme Saldırısı) önlemidir. Saldırganın araya girip `1` veya `p-1` göndererek ortak sırrı tahmin edilebilir (1 veya -1) hale getirmesini engeller.
-    *   3. Aşamada "Saf Bob" (Naive Bob) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
+    *   3. Aşamada "Saf burak" (Naive burak) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
 
 3.  **Performans Farkı (Teorik):**
     *   `DiffieHellmanProtocol` public key üretmek için 2048-bitlik bir üs alma işlemi yapar (`square_and_multiply`).
@@ -575,7 +575,7 @@ class DiffieHellmanProtocol:
         S = B^a mod p
         """
         # Güvenlik Kontrolü: Gelen anahtarın 1 veya p-1 olup olmadığı kontrol edilmeli (Small Subgroup Attack)
-        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive Bob" kullanacağız.
+        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive burak" kullanacağız.
         # Bu sınıf güvenli versiyonu temsil etsin:
         if other_public_key <= 1 or other_public_key >= self.p - 1:
             raise ValueError("Gecersiz Public Key! (Small Subgroup Saldirisi Riski)")
@@ -899,7 +899,7 @@ Abstract-Several recent standards, including NIST SP 800-56A and RFC 5114, advoc
 
 ## I. INTRODUCTION
 
-Diffie-Hellman key exchange is one of the most common public-key cryptographic methods in use in the Internet. It is a fundamental building block for IPsec, SSH, and TLS. In the textbook presentation of finite field Diffie-Hellman, Alice and Bob agree on a large prime p and an integer g modulo p. Alice chooses a secret integer  $x_a$  and transmits a public value  $g^{x_a} \mod p$ ; Bob chooses a secret integer  $x_b$  and transmits his public value  $g^{x_b} \mod p$ . Both Alice and Bob can reconstruct a shared secret  $g^{x_a x_b} \mod p$ , but the best known way for a passive eavesdropper to reconstruct this secret is to compute the discrete log of either Alice or Bob's public value. Specifically, given g, p, and  $g^x \mod p$ , an attacker must calculate x.
+Diffie-Hellman key exchange is one of the most common public-key cryptographic methods in use in the Internet. It is a fundamental building block for IPsec, SSH, and TLS. In the textbook presentation of finite field Diffie-Hellman, arda and burak agree on a large prime p and an integer g modulo p. arda chooses a secret integer  $x_a$  and transmits a public value  $g^{x_a} \mod p$ ; burak chooses a secret integer  $x_b$  and transmits his public value  $g^{x_b} \mod p$ . Both arda and burak can reconstruct a shared secret  $g^{x_a x_b} \mod p$ , but the best known way for a passive eavesdropper to reconstruct this secret is to compute the discrete log of either arda or burak's public value. Specifically, given g, p, and  $g^x \mod p$ , an attacker must calculate x.
 
 In order for the discrete log problem to be hard, Diffie-Hellman parameters must be chosen carefully. A typical recommendation is that p should be a "safe" prime, that is, that p=2q+1 for some prime q, and that q should generate the group of order q modulo q. For q that are not safe, the group order q can be much smaller than q. For security, q must still
 
@@ -938,15 +938,15 @@ In theory, neither p nor q is required to be prime. Diffie-Hellman key exchange 
 
 ### B. Diffie-Hellman Key Exchange
 
-Diffie-Hellman key exchange allows two parties to agree on a shared secret in the presence of an eavesdropper [29]. Alice and Bob begin by agreeing on shared parameters (prime p, generator g, and optionally group order q) for an algebraic group. Depending on the protocol, the group may be requested by the initiator (as in IKE), unilaterally chosen by the responder (as in TLS), or fixed by the protocol itself (SSH originally built in support for a single group).
+Diffie-Hellman key exchange allows two parties to agree on a shared secret in the presence of an eavesdropper [29]. arda and burak begin by agreeing on shared parameters (prime p, generator g, and optionally group order q) for an algebraic group. Depending on the protocol, the group may be requested by the initiator (as in IKE), unilaterally chosen by the responder (as in TLS), or fixed by the protocol itself (SSH originally built in support for a single group).
 
-Having agreed on a group, Alice chooses a secret  $x_a < q$  and sends Bob  $y_a = g^{x_a} \mod p$ . Likewise, Bob chooses a secret  $x_b < q$  and sends Alice  $y_b = g^{x_b} \mod p$ . Each participant then computes the shared secret key  $g^{x_a x_b} \mod p$ .
+Having agreed on a group, arda chooses a secret  $x_a < q$  and sends burak  $y_a = g^{x_a} \mod p$ . Likewise, burak chooses a secret  $x_b < q$  and sends arda  $y_b = g^{x_b} \mod p$ . Each participant then computes the shared secret key  $g^{x_a x_b} \mod p$ .
 
 Depending on the implementation, the public values  $y_a$  and  $y_b$  might be *ephemeral*—freshly generated for each connection—or *static* and reused for many connections.
 
 ### C. Discrete log algorithms
 
-The best known attack against Diffie-Hellman is for the eavesdropper to compute the the private exponent x by calculating the discrete log of one of Alice or Bob's public value y. With knowledge of the exponent, the attacker can trivially compute the shared secret. It is not known in general whether the hardness of computing the shared secret from the public values is equivalent to the hardness of discrete log.
+The best known attack against Diffie-Hellman is for the eavesdropper to compute the the private exponent x by calculating the discrete log of one of arda or burak's public value y. With knowledge of the exponent, the attacker can trivially compute the shared secret. It is not known in general whether the hardness of computing the shared secret from the public values is equivalent to the hardness of discrete log.
 
 The computational Diffie-Hellman assumption states that computing the shared secret  $g^{x_ax_b}$  from  $g^{x_a}$  and  $g^{x_b}$  is hard for some choice of groups. A stronger assumption, the decisional Diffie-Hellman problem, states that given  $g^{x_a}$  and  $g^{x_b}$ , the shared secret  $g^{x_ax_b}$  is computationally indistinguishable from random for some groups. This assumption is often not true for groups used in practice; even with safe primes as defined below, many implementations use a generator that generates
 
@@ -986,9 +986,9 @@ Since the security of Diffie-Hellman relies crucially on the group parameters, i
 
 Small subgroup confinement attacks. In a small subgroup confinement attack, an attacker (either a man-in-the-middle or a malicious client or server) provides a key-exchange value y that lies in a subgroup of small order. This forces the other party's view of the shared secret,  $y^x$ , to lie in the subgroup generated by the attacker. This type of attack was described by van Oorschot and Wiener [69] and ascribed to Vanstone and Anderson and Vaudenay [20]. Small subgroup confinement attacks are possible even when the server does not repeat exponents—the only requirement is that an implementation does not validate that received Diffie-Hellman key exchange values are in the correct subgroup.
 
-When working  $\operatorname{mod} p$ , there is always a subgroup of order 2, since p-1 is even. A malicious client Mallory could initiate a Diffie-Hellman key exchange value with Alice and send her the value  $y_M = p-1 \equiv -1 \mod p$ , which is is a generator of the group of order  $2 \mod p$ . When Alice attempts to compute her view of the shared secret as  $k_a = y_M^a \mod p$ , there are only two possible values, 1 and  $-1 \mod p$ .
+When working  $\operatorname{mod} p$ , there is always a subgroup of order 2, since p-1 is even. A malicious client Mallory could initiate a Diffie-Hellman key exchange value with arda and send her the value  $y_M = p-1 \equiv -1 \mod p$ , which is is a generator of the group of order  $2 \mod p$ . When arda attempts to compute her view of the shared secret as  $k_a = y_M^a \mod p$ , there are only two possible values, 1 and  $-1 \mod p$ .
 
-The same type of attack works if p-1 has other small factors  $q_i$ . Mallory can send a generator  $g_i$  of a group of order  $q_i$  as her Diffie-Hellman key exchange value. Alice's view of the shared secret will be an element of the subgroup of order  $q_i$ . Mallory then has a  $1/q_i$  chance of blindly guessing Alice's shared secret in this invalid group. Given a message from Alice encrypted using Alice's view of the shared secret, Mallory can brute force Alice's shared secret in  $q_i$  guesses.
+The same type of attack works if p-1 has other small factors  $q_i$ . Mallory can send a generator  $g_i$  of a group of order  $q_i$  as her Diffie-Hellman key exchange value. arda's view of the shared secret will be an element of the subgroup of order  $q_i$ . Mallory then has a  $1/q_i$  chance of blindly guessing arda's shared secret in this invalid group. Given a message from arda encrypted using arda's view of the shared secret, Mallory can brute force arda's shared secret in  $q_i$  guesses.
 
 More recently, Bhargavan and Delignat-Lavaud [25] describe "key synchronization" attacks against IKEv2 where a man-in-the-middle connects to both the initiator and responder in different connections, uses a small subgroup confinement attack against both, and observes that there is a  $1/q_i$  probability of the shared secrets being the same in both connections. Bhargavan and Leurent [26] describe several attacks that use subgroup confinement attacks to obtain a transcript collision and break protocol authentication.
 
@@ -996,7 +996,7 @@ To protect against subgroup confinement attacks, implementations should use prim
 
 **Small subgroup key recovery attacks.** Lim and Lee [54] discovered a further attack that arises when an implementation fails to validate subgroup order and resues a static secret exponent for multiple key exchanges. A malicious party may be able to perform multiple subgroup confinement attacks for different prime factors  $q_i$  of p-1 and then use the Chinese remainder theorem to reconstruct the static secret exponent.
 
-The attack works as follows. Let p-1 have many small factors  $p-1=q_1q_2\dots q_n$ . Mallory, a malicious client, uses the procedure described in Section II-A to find a generator of the subgroup  $g_i$  of order  $q_i \mod p$ . Then Mallory transmits  $g_i$  as her Diffie-Hellman key exchange value, and receives a message encrypted with Alice's view of the shared secret  $g_i^{x_a}$ , which Mallory can brute force to learn the value of  $x_a \mod q_i$ . Once Mallory has repeated this process several times, she can use the Chinese remainder theorem to reconstruct  $x_a \mod \prod_i q_i$ . The running time of this attack is  $\sum_i q_i$ , assuming that Mallory performs an offline brute-force search for each subgroup.
+The attack works as follows. Let p-1 have many small factors  $p-1=q_1q_2\dots q_n$ . Mallory, a malicious client, uses the procedure described in Section II-A to find a generator of the subgroup  $g_i$  of order  $q_i \mod p$ . Then Mallory transmits  $g_i$  as her Diffie-Hellman key exchange value, and receives a message encrypted with arda's view of the shared secret  $g_i^{x_a}$ , which Mallory can brute force to learn the value of  $x_a \mod q_i$ . Once Mallory has repeated this process several times, she can use the Chinese remainder theorem to reconstruct  $x_a \mod \prod_i q_i$ . The running time of this attack is  $\sum_i q_i$ , assuming that Mallory performs an offline brute-force search for each subgroup.
 
 <span id="page-3-0"></span>
 
@@ -1013,7 +1013,7 @@ The attack works as follows. Let p-1 have many small factors  $p-1=q_1q_2\dots q
 
 TABLE I: **Common application behavior**—Applications make a diverse set of decisions on how to handle Diffie-Hellman exponents, likely due to the plethora of conflicting, confusing, and incorrect recommendations available.
 
-A randomly chosen prime p is likely to have subgroups of large enough order that this attack is infeasible to carry out for all subgroups. However, if in addition Alice's secret exponent  $x_a$  is small, then Mallory only needs to carry out this attack for a subset of subgroups of orders  $q_1, \ldots, q_k$  satisfying  $\prod_{i=0}^k q_i > x_a$ , since the Chinese remainder theorem ensures that  $x_a$  will be uniquely defined. Mallory can also improve on the running time of the attack by taking advantage of the Pollard lambda algorithm. That is, she could use a small subgroup attack to learn the value of  $x_a \mod \prod_{i=1}^k q_i$  for a subset of subgroups  $\prod_{i=1}^k q_i < x_a$ , and then use the Pollard lambda algorithm to reconstruct the full value of a, as it has now been confined to a smaller interval.
+A randomly chosen prime p is likely to have subgroups of large enough order that this attack is infeasible to carry out for all subgroups. However, if in addition arda's secret exponent  $x_a$  is small, then Mallory only needs to carry out this attack for a subset of subgroups of orders  $q_1, \ldots, q_k$  satisfying  $\prod_{i=0}^k q_i > x_a$ , since the Chinese remainder theorem ensures that  $x_a$  will be uniquely defined. Mallory can also improve on the running time of the attack by taking advantage of the Pollard lambda algorithm. That is, she could use a small subgroup attack to learn the value of  $x_a \mod \prod_{i=1}^k q_i$  for a subset of subgroups  $\prod_{i=1}^k q_i < x_a$ , and then use the Pollard lambda algorithm to reconstruct the full value of a, as it has now been confined to a smaller interval.
 
 In summary, an implementation is vulnerable to small subgroup key recovery attacks if it does not verify that received Diffie-Hellman key exchange values are in the correct subgroup; uses a prime p such that p-1 has small factors; and reuses Diffie-Hellman secret exponent values. The attack is made even more practical if the implementation uses small exponents.
 
@@ -2130,14 +2130,14 @@ To transition from a theoretical simulation to a **technical demonstration** by 
 
 
 ### **B. Small Subgroup Confinement Attack (MitM)**
-* [ ] **Vulnerable Implementation:** Create a "Bob" node that receives public key A but **skips** validating if A is a valid group generator.
+* [ ] **Vulnerable Implementation:** Create a "burak" node that receives public key A but **skips** validating if A is a valid group generator.
 * [ ] **The Attack Vector:**
-* **Mallory:** Intercepts Alice's key.
+* **Mallory:** Intercepts arda's key.
 
 **Injection:** Replaces it with p-1 (order 2 subgroup generator).
 
 * [ ] **The Exploit:**
-* Bob computes S = (p-1)^b \pmod p.
+* burak computes S = (p-1)^b \pmod p.
 * Result: S is forced to be either `1` or `-1`.
 * Mallory brute-forces the message by trying only these 2 keys.
 

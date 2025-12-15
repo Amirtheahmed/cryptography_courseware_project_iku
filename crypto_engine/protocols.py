@@ -13,7 +13,7 @@ from .elliptic_curve import EllipticCurve, Point
 
 2.  **Güvenlik Kontrolleri:**
     *   `DiffieHellmanProtocol` içinde `if other_public_key <= 1...` kontrolü ekledik. Bu, **Small Subgroup Confinement Attack** (Küçük Alt Grup Hapsetme Saldırısı) önlemidir. Saldırganın araya girip `1` veya `p-1` göndererek ortak sırrı tahmin edilebilir (1 veya -1) hale getirmesini engeller.
-    *   3. Aşamada "Saf Bob" (Naive Bob) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
+    *   3. Aşamada "Saf burak" (Naive burak) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
 
 3.  **Performans Farkı (Teorik):**
     *   `DiffieHellmanProtocol` public key üretmek için 2048-bitlik bir üs alma işlemi yapar (`square_and_multiply`).
@@ -55,7 +55,7 @@ class DiffieHellmanProtocol:
         S = B^a mod p
         """
         # Güvenlik Kontrolü: Gelen anahtarın 1 veya p-1 olup olmadığı kontrol edilmeli (Small Subgroup Attack)
-        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive Bob" kullanacağız.
+        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive burak" kullanacağız.
         # Bu sınıf güvenli versiyonu temsil etsin:
         if other_public_key <= 1 or other_public_key >= self.p - 1:
             raise ValueError("Gecersiz Public Key! (Small Subgroup Saldirisi Riski)")

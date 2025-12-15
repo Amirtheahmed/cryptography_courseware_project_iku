@@ -1,13 +1,17 @@
-.PHONY: build run-iot-benchmark run-server-benchmark
+.PHONY: build benchmark-iot benchmark-server
 
 build:
-	@echo "Docker imajı oluşturuluyor..."
+	@echo "Building Crypto Workbench..."
 	docker build -t crypto-bench .
 
-run-iot-benchmark:
-	@echo "IoT Benchmark'ı çalıştıriliyor..."
-	docker run --cpus="0.5" --memory="128m" --rm crypto-bench
+# Runs benchmark inside limited container, pipes JSON to local report generator
+benchmark-iot:
+	@echo "Running Simulation: IoT / Ad-Hoc Network Node (Low CPU)..."
+	docker run --rm --cpus="0.5" --memory="128m" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
+	@echo "Opening Report..."
+	# Linux/Mac için open/xdg-open, Windows için start kullanılabilir
+	# open crypto_benchmark_report.html
 
-run-server-benchmark:
-	@echo "Genel Server Benchmark'ı çalıştıriliyor..."
-	docker run --rm crypto-bench --cpus="2.0" --memory="1g"
+benchmark-server:
+	@echo "Running Simulation: High Performance Server..."
+	docker run --rm --cpus="2.0" --memory="1g" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
