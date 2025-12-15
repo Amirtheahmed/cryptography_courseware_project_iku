@@ -9,7 +9,7 @@ from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
 from attack_lab.utils import *
 
 
-class Naiveburak(DiffieHellmanProtocol):
+class NaiveBurak(DiffieHellmanProtocol):
     """
     A Vulnerable Implementation of burak.
     He forgot to check if the public key is in range [2, p-2].
@@ -32,7 +32,7 @@ def run_mitm_demo():
     g = DH_2048_G
 
     # Naive burak is initialized
-    burak = Naiveburak(p, g)
+    burak = NaiveBurak(p, g)
     log_actor("burak (Naive)", "Waiting for arda's Public Key...", "", Colors.GREEN)
 
     # 2. Mallory Intercepts
@@ -58,7 +58,7 @@ def run_mitm_demo():
         log_actor("burak (Naive)", "Sends Encrypted Data", f"Bytes: {ciphertext.hex()[:20]}...", Colors.GREEN)
 
     except ValueError as e:
-        print("burak detected the attack! (This shouldn't happen in Naiveburak)")
+        print("burak detected the attack! (This shouldn't happen in NaiveBurak)")
         return
 
     # 5. Mallory Brute Forces

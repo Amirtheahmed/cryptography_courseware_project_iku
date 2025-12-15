@@ -1,59 +1,98 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>DH Vulnerability Simulator</title>
+    <title>DH Zafiyet Simülatörü</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
 <div class="header">
-    <h1>Diffie-Hellman Protocol <span class="highlight">Attack Lab</span></h1>
+    <h1>Diffie-Hellman <span class="highlight">Saldırı Laboratuvarı</span></h1>
+
+    <!-- Real-time Narrator Box -->
+    <div class="narrator-box">
+        <i class="fas fa-info-circle info-icon"></i>
+        <span id="narrator-text">Simülasyon başlatılmaya hazır. Lütfen bir eylem seçin.</span>
+    </div>
+
     <div class="controls">
-        <button onclick="startHandshake('ephemeral')"><i class="fas fa-sync"></i> Ephemeral Handshake (Secure)</button>
-        <button onclick="startHandshake('static')"><i class="fas fa-lock"></i> Static Handshake (Risky)</button>
-        <button onclick="toggleAttack()" class="btn-red"><i class="fas fa-user-secret"></i> Toggle MitM Attack</button>
-        <button onclick="leakKey()" class="btn-warning"><i class="fas fa-radiation"></i> Leak burak's Key</button>
+        <div class="control-group">
+            <span class="label">El Sıkışma Türü:</span>
+            <button onclick="startHandshake('ephemeral')"><i class="fas fa-sync"></i> Geçici (Ephemeral)</button>
+            <button onclick="startHandshake('static')"><i class="fas fa-lock"></i> Statik (Riskli)</button>
+        </div>
+        <div class="control-group">
+            <span class="label">Saldırı Araçları:</span>
+            <button onclick="toggleAttack()" class="btn-red" id="btn-mitm"><i class="fas fa-user-secret"></i> MitM (Alt Grup)</button>
+            <button onclick="leakKey()" class="btn-warning"><i class="fas fa-radiation"></i> Anahtarı Sızdır (FS Test)</button>
+        </div>
     </div>
 </div>
 
-<div class="network-grid">
-    <!-- arda -->
-    <div class="node" id="node-arda">
-        <div class="icon"><i class="fas fa-user-shield"></i></div>
-        <h2>arda</h2>
-        <div class="status-box">Status: <span id="status-arda">Idle</span></div>
-        <div class="key-display" id="key-arda">Shared Secret: ???</div>
-    </div>
+<div class="main-container">
 
-    <!-- THE CHANNEL (MALLORY) -->
-    <div class="channel-zone">
-        <div class="wire"></div>
-        <div class="packet" id="active-packet"><i class="fas fa-envelope"></i></div>
+    <!-- LEFT: Network Visualization -->
+    <div class="network-area">
+        <div class="network-grid">
+            <!-- Arda -->
+            <div class="node" id="node-arda">
+                <div class="icon"><i class="fas fa-user-shield"></i></div>
+                <h2>Arda (İstemci)</h2>
+                <div class="status-box">Durum: <span id="status-arda">Beklemede</span></div>
+                <div class="key-display" id="key-arda">Ortak Sır: ???</div>
+            </div>
 
-        <div class="node attacker" id="node-mallory">
-            <div class="icon"><i class="fas fa-user-secret"></i></div>
-            <h2>Mallory</h2>
-            <div class="status-box" id="status-mallory">Mode: Passive</div>
-            <div class="hack-console" id="hack-console">Waiting for traffic...</div>
+            <!-- CHANNEL / MALLORY -->
+            <div class="channel-zone">
+                <div class="wire"></div>
+                <div class="packet" id="active-packet"><i class="fas fa-envelope"></i></div>
+
+                <div class="node attacker" id="node-mallory">
+                    <div class="icon"><i class="fas fa-user-secret"></i></div>
+                    <h2>Mallory (Saldırgan)</h2>
+                    <div class="status-box" id="status-mallory">Mod: Pasif</div>
+                    <div class="hack-console" id="hack-console">Trafik bekleniyor...</div>
+                </div>
+            </div>
+
+            <!-- Burak -->
+            <div class="node" id="node-burak">
+                <div class="icon"><i class="fas fa-server"></i></div>
+                <h2>Burak (Sunucu)</h2>
+                <div class="status-box">Durum: <span id="status-burak">Beklemede</span></div>
+                <div class="key-display" id="key-burak">Ortak Sır: ???</div>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="log-panel">
+            <h3><i class="fas fa-terminal"></i> Sistem Kayıtları</h3>
+            <div id="log-container"></div>
         </div>
     </div>
 
-    <!-- burak -->
-    <div class="node" id="node-burak">
-        <div class="icon"><i class="fas fa-server"></i></div>
-        <h2>burak</h2>
-        <div class="status-box">Status: <span id="status-burak">Idle</span></div>
-        <div class="key-display" id="key-burak">Shared Secret: ???</div>
-    </div>
-</div>
+    <!-- RIGHT: Forward Secrecy / History Panel -->
+    <div class="history-panel">
+        <h3><i class="fas fa-history"></i> İleriye Dönük Gizlilik (Forward Secrecy)</h3>
+        <p class="history-desc">Burak'ın anahtarı sızdırıldığında geçmiş oturumların durumunu buradan izleyin.</p>
 
-<div class="log-panel">
-    <h3><i class="fas fa-terminal"></i> Simulation Logs</h3>
-    <div id="log-container"></div>
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Zaman</th>
+                    <th>Mod</th>
+                    <th>Sır İpucu</th>
+                    <th>Durum</th>
+                </tr>
+            </thead>
+            <tbody id="history-list">
+                <tr><td colspan="4" style="text-align:center; color:#666;">Henüz oturum yok</td></tr>
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>

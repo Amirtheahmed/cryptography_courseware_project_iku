@@ -37,10 +37,21 @@ The content is organized as follows:
 ```
 attack_lab/
   __init__.py
-  mitm_simulation.py
+  forward_secrecy.py
+  subgroup_mitm.py
+  utils.py
+attack_visualizer/
+  static/
+    script.js
+    style.css
+  templates/
+    index.html
+  app.py
+  requirements.txt
 benchmark_suite/
   __init__.py
   benchmark.py
+  report_generator.py
   standard_params.py
 crypto_engine/
   __init__.py
@@ -53,6 +64,8 @@ references/
   The Elliptic Curve Diffie-Hellman (ECDH).md
   The Performance of Elliptic Curve Based Group Diffie-Hellman Protocols for Secure Group Communication over Ad Hoc Networks.md
   TLS & Perfect Forward Secrecy.md
+.gitignore
+crypto_benchmark_report.html
 Dockerfile
 Implementation-Plan-Task-Lists.md
 main.py
@@ -60,577 +73,6 @@ Makefile
 ```
 
 # Files
-
-## File: benchmark_suite/benchmark.py
-```python
-import time
-import sys
-import os
-
-# Üst dizindeki modülleri görebilmek için path ayarı
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from crypto_engine.protocols import DiffieHellmanProtocol, ECDHProtocol
-from crypto_engine.elliptic_curve import EllipticCurve
-import benchmark_suite.standard_params as params
-
-
-def benchmark_dh(name, p, g, iterations=5):
-    """Classic DH Performans Ölçümü"""
-    print(f"\n--- {name} Benchmark Başlıyor ({iterations} iterasyon) ---")
-
-    total_keygen_time = 0
-    total_handshake_time = 0
-    pub_key_size = 0
-
-    for _ in range(iterations):
-        # 1. Key Generation (arda)
-        start = time.time()
-        arda = DiffieHellmanProtocol(p, g)
-        end = time.time()
-        total_keygen_time += (end - start)
-
-        # burak KeyGen (Ölçüme dahil değil ama gerekli)
-        burak = DiffieHellmanProtocol(p, g)
-
-        # 2. Shared Secret (Handshake)
-        start = time.time()
-        _ = arda.generate_shared_secret(burak.public_key)
-        end = time.time()
-        total_handshake_time += (end - start)
-
-        # 3. Payload Size (Bytes)
-        # Public Key (int) byte uzunluğu: (bit_length + 7) // 8
-        pub_key_size = (arda.public_key.bit_length() + 7) // 8
-
-    avg_keygen = total_keygen_time / iterations
-    avg_handshake = total_handshake_time / iterations
-
-    return avg_keygen, avg_handshake, pub_key_size
-
-
-def benchmark_ecdh(name, ec_params, iterations=5):
-    """ECDH Performans Ölçümü"""
-    if ec_params['p'] == 0:
-        print(f"\n--- {name} Benchmark Atlanıyor (Placeholder Parametreler) ---")
-        return 0, 0, 0
-
-    print(f"\n--- {name} Benchmark Başlıyor ({iterations} iterasyon) ---")
-
-    curve = EllipticCurve(ec_params['a'], ec_params['b'], ec_params['p'])
-    G = (ec_params['gx'], ec_params['gy'])
-    n = ec_params['n']
-
-    total_keygen_time = 0
-    total_handshake_time = 0
-    pub_key_size = 0
-
-    for _ in range(iterations):
-        # 1. Key Generation (arda)
-        start = time.time()
-        arda = ECDHProtocol(curve, G, n)
-        end = time.time()
-        total_keygen_time += (end - start)
-
-        burak = ECDHProtocol(curve, G, n)
-
-        # 2. Shared Secret (Handshake)
-        start = time.time()
-        _ = arda.generate_shared_secret(burak.public_key)
-        end = time.time()
-        total_handshake_time += (end - start)
-
-        # 3. Payload Size (Bytes) - Uncompressed Point (04 || x || y)
-        # x ve y koordinatlarının her biri (p_bits + 7) // 8 byte
-        coord_bytes = (ec_params['p'].bit_length() + 7) // 8
-        pub_key_size = 1 + (2 * coord_bytes)  # 1 byte prefix + x + y
-
-    avg_keygen = total_keygen_time / iterations
-    avg_handshake = total_handshake_time / iterations
-
-    return avg_keygen, avg_handshake, pub_key_size
-
-
-if __name__ == "__main__":
-    print("Algorithm,Avg_KeyGen_Time(s),Avg_Handshake_Time(s),PublicKey_Size(Bytes)")
-
-    # 1. Test: DH-2048
-    kg, hs, size = benchmark_dh("DH-2048", params.DH_2048_P, params.DH_2048_G)
-    print(f"DH-2048: {kg:.5f}, {hs:.5f}, {size}")
-
-    # 2. Test: ECDH-256 (NIST P-256) -> DH-3072 seviyesine yakındır güvenlik olarak
-    kg, hs, size = benchmark_ecdh("ECDH-P256", params.NIST_P256_PARAMS)
-    print(f"ECDH-P256: {kg:.5f}, {hs:.5f}, {size}")
-
-    # 3. Test: DH-3072
-    kg, hs, size = benchmark_dh("DH-3072", params.DH_3072_P, params.DH_3072_G)
-    print(f"DH-3072: {kg:.5f}, {hs:.5f}, {size}")
-
-    # 4. Test: ECDH-384 (NIST P-384)
-    kg, hs, size = benchmark_ecdh("ECDH-P384", params.NIST_P384_PARAMS)
-    print(f"ECDH-P384: {kg:.5f}, {hs:.5f}, {size}")
-```
-
-## File: benchmark_suite/standard_params.py
-```python
-"""
-Bu dosya RFC 3526 (DH) ve NIST (ECDH) standart parametrelerini içerir.
-NOT: Hex değerleri okunabilirlik açısından kısaltılmıştır (Placeholder).
-Gerçek bir test için bu değerler tam halleriyle değiştirilmelidir.
-"""
-
-# --- CLASSIC DH PARAMETERS (RFC 3526) ---
-
-# 2048-bit MODP Group (Group 14)
-# P = 2^2048 - 2^1984 - 1 + 2^64 * { [2^1918 pi] + 124476 }
-# https://datatracker.ietf.org/doc/html/rfc3526#section-3
-DH_2048_P_HEX = """
-FFFFFFFF FFFFFFFF C90FDAA2 2168C234 C4C6628B 80DC1CD1
-29024E08 8A67CC74 020BBEA6 3B139B22 514A0879 8E3404DD
-EF9519B3 CD3A431B 302B0A6D F25F1437 4FE1356D 6D51C245
-E485B576 625E7EC6 F44C42E9 A637ED6B 0BFF5CB6 F406B7ED
-EE386BFB 5A899FA5 AE9F2411 7C4B1FE6 49286651 ECE45B3D
-C2007CB8 A163BF05 98DA4836 1C55D39A 69163FA8 FD24CF5F
-83655D23 DCA3AD96 1C62F356 208552BB 9ED52907 7096966D
-670C354E 4ABC9804 F1746C08 CA237327 FFFFFFFF FFFFFFFF
-"""
-DH_2048_P = int(DH_2048_P_HEX.replace(" ", "").replace("\n", ""), 16)
-DH_2048_G = 2
-
-# 3072-bit MODP Group (Group 15)
-# P = 2^3072 - 2^3008 - 1 + 2^64 * { [2^2942 pi] + 1690314 }
-# https://datatracker.ietf.org/doc/html/rfc3526#section-4
-DH_3072_P_HEX = """
-FFFFFFFF FFFFFFFF C90FDAA2 2168C234 C4C6628B 80DC1CD1
-29024E08 8A67CC74 020BBEA6 3B139B22 514A0879 8E3404DD
-EF9519B3 CD3A431B 302B0A6D F25F1437 4FE1356D 6D51C245
-E485B576 625E7EC6 F44C42E9 A637ED6B 0BFF5CB6 F406B7ED
-EE386BFB 5A899FA5 AE9F2411 7C4B1FE6 49286651 ECE45B3D
-C2007CB8 A163BF05 98DA4836 1C55D39A 69163FA8 FD24CF5F
-83655D23 DCA3AD96 1C62F356 208552BB 9ED52907 7096966D
-670C354E 4ABC9804 F1746C08 CA18217C 32905E46 2E36CE3B
-E39E772C 180E8603 9B2783A2 EC07A28F B5C55DF0 6F4C52C9
-DE2BCBF6 95581718 3995497C EA956AE5 15D22618 98FA0510
-15728E5A 8AAAC42D AD33170D 04507A33 A85521AB DF1CBA64
-ECFB8504 58DBEF0A 8AEA7157 5D060C7D B3970F85 A6E1E4C7
-ABF5AE8C DB0933D7 1E8C94E0 4A25619D CEE3D226 1AD2EE6B
-F12FFA06 D98A0864 D8760273 3EC86A64 521F2B18 177B200C
-BBE11757 7A615D6C 770988C0 BAD946E2 08E24FA0 74E5AB31
-43DB5BFC E0FD108E 4B82D120 A93AD2CA FFFFFFFF FFFFFFFF
-"""
-# Test amaçlı dummy değer:
-DH_3072_P = int(DH_3072_P_HEX.replace(" ", "").replace("\n", ""), 16)
-DH_3072_G = 2
-
-
-# --- ECDH PARAMETERS (NIST) ---
-
-# NIST P-256 (secp256r1)
-# https://std.neuromancer.sk/nist/P-256
-# y^2 = x^3 - 3x + b (mod p)
-NIST_P256_PARAMS = {
-    'p': int("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF", 16),
-    'a': int("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFC", 16),
-    'b': int("0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B", 16),
-    'gx': int("0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296", 16),
-    'gy': int("0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5", 16),
-    'n': int("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
-}
-
-# NIST P-384 (secp384r1)
-# https://std.neuromancer.sk/nist/P-384#
-# y^2 = x^3 - 3x + b (mod p)
-NIST_P384_PARAMS = {
-    'p': int("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff", 16),
-    'a': int("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc", 16),
-    'b': int("0xb3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef", 16),
-    'gx': int("0xaa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf", 16),
-    'gy': int("0x3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7", 16),
-    'n': int("0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973", 16),
-    'h': int("0x1", 16)
-}
-```
-
-## File: crypto_engine/elliptic_curve.py
-```python
-from typing import Tuple, Optional
-
-"""
-### Teknik Açıklama ("The Why")
-
-Bu kodda uyguladığımız prensipler neden önemli?
-
-1.  **Double-and-Add Algoritması:**
-    Tıpkı Klasik DH'deki *Square-and-Multiply* gibi, bu algoritma da işlemin logaritmik zamanda bitmesini sağlar.
-    *   256-bitlik bir anahtar (k) için, eğer basit toplama yapsaydık ($P+P+P...$) $2^{256}$ işlem gerekirdi. Bu imkansızdır.
-    *   **Double-and-Add** ile sadece yaklaşık **256 tane Point Doubling** ve ortalama **128 tane Point Addition** işlemiyle sonuca ulaşırız. ECDH'yi hızlı ve kullanılabilir kılan budur.
-
-2.  **Modüler Ters (Modular Inverse):**
-    Kodda `(y2 - y1) / (x2 - x1)` işlemi yapmamız gerekiyor. Ancak sonlu cisimlerde (Finite Fields) kesirli sayı yoktur.
-    *   Örnek: Mod 17'de $4/2 = 2$ dir.
-    *   Ancak $4 \times (2^{-1}) \pmod{17}$ olarak hesaplarız.
-    *   `_modular_inverse` fonksiyonumuz, Genişletilmiş Öklid algoritmasını kullanarak bu "bölme" işlemini gerçekleştirir. Bu fonksiyon olmadan eğri üzerinde hareket edemezdik.
-
-3.  **Point at Infinity (`None`):**
-    Normal sayılarda `0` neyse, Elliptik Eğrilerde "Sonsuzdaki Nokta" odur. Birim elemandır. Kodda bunu `None` olarak temsil ettik ve `point_add` fonksiyonunun başında bu durumu (Identity) özel olarak ele aldık.
-"""
-
-# Noktayı temsil etmek için basit bir tip tanımı: (x, y) veya None (Sonsuzdaki Nokta)
-Point = Optional[Tuple[int, int]]
-
-
-class EllipticCurve:
-    """
-    Weierstrass formundaki elliptik eğriler üzerinde işlemleri gerçekleştirir:
-    y^2 = x^3 + ax + b (mod p)
-
-    Kütüphane kullanmadan 'Double-and-Add' algoritmasını uygular.
-    """
-
-    def __init__(self, a: int, b: int, p: int):
-        self.a = a
-        self.b = b
-        self.p = p
-
-    def _modular_inverse(self, n: int) -> int:
-        """
-        Genişletilmiş Öklid Algoritması (Extended Euclidean Algorithm).
-        Mod p'de n'in çarpımsal tersini bulur.
-        Yani: (n * x) % p == 1 olan x'i bulur.
-        Bu işlem, eğim hesaplarken bölme işlemi yerine kullanılır.
-        """
-        if n == 0:
-            raise ValueError("0'ın tersi yoktur (Sıfıra bölme hatası).")
-
-        n = n % self.p
-        original_p = self.p
-        x0, x1 = 0, 1
-
-        if self.p == 1: return 0
-
-        temp_n = n
-        temp_p = self.p
-
-        while temp_n > 1:
-            # Standart öklid algoritması adımları
-            q = temp_n // temp_p
-            temp_n, temp_p = temp_p, temp_n % temp_p
-            x0, x1 = x1 - q * x0, x0
-
-        if x1 < 0:
-            x1 += original_p
-
-        return x1
-
-    def point_add(self, P: Point, Q: Point) -> Point:
-        """
-        İki noktayı toplar: P + Q
-        Geometrik olarak: P ve Q'dan geçen doğrunun eğriyi kestiği 3. noktanın x eksenine göre yansıması.
-        """
-        # 1. Durum: Birim eleman (Sonsuzdaki Nokta - 0) ile toplama
-        if P is None: return Q
-        if Q is None: return P
-
-        x1, y1 = P
-        x2, y2 = Q
-
-        # 2. Durum: Nokta tersi ile toplama (P + (-P) = 0)
-        # Dikey bir doğru oluşur, sonsuza gider.
-        if x1 == x2 and y1 != y2:
-            return None
-
-        # 3. Durum: Nokta kendisiyle toplanıyorsa (P == Q) -> Point Doubling
-        if x1 == x2 and y1 == y2:
-            return self.point_double(P)
-
-        # 4. Durum: Genel Toplama (P != Q)
-        # Eğim (m) = (y2 - y1) / (x2 - x1) mod p
-        # Bölme işlemi modüler ters ile çarpmaya dönüşür.
-        numerator = (y2 - y1) % self.p
-        denominator = (x2 - x1) % self.p
-
-        inv_denom = self._modular_inverse(denominator)
-        slope = (numerator * inv_denom) % self.p
-
-        # Yeni koordinatları hesapla
-        x3 = (slope * slope - x1 - x2) % self.p
-        y3 = (slope * (x1 - x3) - y1) % self.p
-
-        return (x3, y3)
-
-    def point_double(self, P: Point) -> Point:
-        """
-        Bir noktayı kendisiyle toplar: P + P = 2P
-        Geometrik olarak: P noktasındaki teğetin eğimi kullanılır.
-        """
-        if P is None: return None
-
-        x1, y1 = P
-
-        # Eğer y1 = 0 ise teğet dikeydir -> Sonsuz
-        if y1 == 0:
-            return None
-
-        # Eğim (m) = (3x^2 + a) / (2y) mod p
-        numerator = (3 * x1 * x1 + self.a) % self.p
-        denominator = (2 * y1) % self.p
-
-        inv_denom = self._modular_inverse(denominator)
-        slope = (numerator * inv_denom) % self.p
-
-        x3 = (slope * slope - 2 * x1) % self.p
-        y3 = (slope * (x1 - x3) - y1) % self.p
-
-        return (x3, y3)
-
-    def scalar_multiply(self, k: int, P: Point) -> Point:
-        """
-        Hesaplar: k * P (P noktasını k kere kendisiyle topla)
-        Algoritma: Double-and-Add
-        Karmaşıklık: O(log k)
-
-        ECDH'de "Public Key" üretimi ve "Shared Secret" hesaplaması burada yapılır.
-        k: Private Key (Scalar)
-        P: Generator Point
-        Sonuç: Public Key (Point)
-        """
-        result = None  # Başlangıçta 0 (Sonsuzdaki Nokta)
-        addend = P
-
-        # Scalar (k) bit bit işlenir
-        while k > 0:
-            # Eğer son bit 1 ise, mevcut 'addend' değerini sonuca ekle
-            if k & 1:
-                result = self.point_add(result, addend)
-
-            # Addend'i iki katına çıkar (Double)
-            addend = self.point_double(addend)
-
-            # Bir sonraki bite geç
-            k >>= 1
-
-        return result
-```
-
-## File: crypto_engine/modular_arithmetic.py
-```python
-import random
-"""
-### Teknik Açıklama
-
-**Neden `pow()` yerine `square_and_multiply` kullandık?**
-
-Diffie-Hellman güvenliği, Ayrık Logaritma Probleminin (Discrete Logarithm Problem) zorluğuna dayanır: g^a mod p hesaplamak kolaydır, ancak sonuçtan a'yı bulmak zordur.
-
-Eğer a sayısı 2048-bitlik bir sayı ise, değeri yaklaşık 10^617'dir. Eğer bu işlemi "üs kadar çarpma" (naive approach) yaparak hesaplamaya çalışsaydık, evrenin yaşından daha uzun sürerdi.
-
-**Square-and-Multiply**, üssü ikilik tabana çevirerek işlem sayısını sayının bit uzunluğuna (örneğin 2048 adım) indirir.
-*   **Örnek:** 3^5 (mod 100)
-*   Naive: 3 * 3 * 3 * 3 * 3 (4 çarpma)
-*   S&M (5 = 101 binary):
-    1.  Bit '1': Kare + Çarp -> 1^2 * 3 = 3
-    2.  Bit '0': Kare -> 3^2 = 9
-    3.  Bit '1': Kare + Çarp -> 9^2 * 3 = 81 * 3 = 243 ≅ 43 (mod 100)
-*   Büyük sayılarda bu fark devasa performans kazancı sağlar ve DH'yi uygulanabilir kılar.
-"""
-
-class ModularArithmetic:
-    """
-    Klasik Diffie-Hellman (DH) için temel matematiksel operasyonları içerir.
-    Python'ın built-in pow() fonksiyonunu KULLANMAZ.
-    """
-
-    @staticmethod
-    def square_and_multiply(base: int, exponent: int, modulus: int) -> int:
-        """
-        Hesaplar: (base ^ exponent) % modulus
-        Algoritma: Square-and-Multiply
-        Karmaşıklık: O(log exponent) - Büyük sayılarla çalışmak için zorunludur.
-        """
-        if modulus == 1:
-            return 0
-
-        result = 1
-        # Üssü ikilik tabana (binary) çeviriyoruz (örn: 5 -> '101')
-        # '0b' öneki olmadan string olarak alıyoruz
-        binary_exponent = bin(exponent)[2:]
-
-        for bit in binary_exponent:
-            # Adım 1: Square (Kare Al)
-            result = (result * result) % modulus
-
-            # Adım 2: Multiply (Eğer bit 1 ise Çarp)
-            if bit == '1':
-                result = (result * base) % modulus
-
-        return result
-
-    @staticmethod
-    def generate_prime_candidate(length: int) -> int:
-        """
-        Basit bir test amaçlı asal sayı adayı üretir (Miller-Rabin testi eklenebilir).
-        Bu simülasyon için random büyük tek sayılar üretiyoruz.
-        """
-        p = random.getrandbits(length)
-        # Sayının tek sayı olduğundan ve en yüksek bitin 1 olduğundan emin ol
-        p |= (1 << length - 1) | 1
-        return p
-
-    @staticmethod
-    def is_prime(n: int, k: int = 5) -> bool:
-        """
-        Miller-Rabin asallık testi.
-        Büyük sayıların asallığını olasılıksal olarak test eder.
-        """
-        if n == 2 or n == 3: return True
-        if n % 2 == 0: return False
-
-        r, s = 0, n - 1
-        while s % 2 == 0:
-            r += 1
-            s //= 2
-
-        for _ in range(k):
-            a = random.randrange(2, n - 1)
-            x = ModularArithmetic.square_and_multiply(a, s, n)
-            if x == 1 or x == n - 1:
-                continue
-            for _ in range(r - 1):
-                x = ModularArithmetic.square_and_multiply(x, 2, n)
-                if x == n - 1:
-                    break
-            else:
-                return False
-        return True
-
-    @staticmethod
-    def get_safe_prime(length: int) -> int:
-        """
-        Belirtilen bit uzunluğunda bir asal sayı döndürür.
-        Gerçek dünya senaryosu için RFC 3526 grupları kullanılmalıdır,
-        ancak burada matematiksel motoru test ediyoruz.
-        """
-        while True:
-            p = ModularArithmetic.generate_prime_candidate(length)
-            if ModularArithmetic.is_prime(p):
-                return p
-```
-
-## File: crypto_engine/protocols.py
-```python
-import secrets
-from typing import Optional, Tuple
-from .modular_arithmetic import ModularArithmetic
-from .elliptic_curve import EllipticCurve, Point
-
-"""
-### Teknik Açıklama ("The Why")
-
-1.  **Ephemeral vs. Static:**
-    *   Sınıflarımızda `private_key` parametresi opsiyoneldir.
-    *   Eğer boş bırakılırsa (`None`), `secrets.randbelow()` kullanılarak her seferinde yeni bir anahtar üretilir. Bu **Ephemeral (Geçici)** anahtar değişimidir ve **Forward Secrecy (İleriye Dönük Gizlilik)** sağlar. Yani bir saldırgan gelecekte sunucuyu hacklese bile, geçmişte üretilen bu rastgele anahtarları bulamaz (çünkü silinmiştir).
-    *   Eğer bir `private_key` verilirse, bu **Static** anahtar değişimidir. 3. Aşamada (Break Phase), statik anahtar kullanan bir sistemin geçmiş mesajlarının nasıl çözüldüğünü göstereceğiz.
-
-2.  **Güvenlik Kontrolleri:**
-    *   `DiffieHellmanProtocol` içinde `if other_public_key <= 1...` kontrolü ekledik. Bu, **Small Subgroup Confinement Attack** (Küçük Alt Grup Hapsetme Saldırısı) önlemidir. Saldırganın araya girip `1` veya `p-1` göndererek ortak sırrı tahmin edilebilir (1 veya -1) hale getirmesini engeller.
-    *   3. Aşamada "Saf burak" (Naive burak) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
-
-3.  **Performans Farkı (Teorik):**
-    *   `DiffieHellmanProtocol` public key üretmek için 2048-bitlik bir üs alma işlemi yapar (`square_and_multiply`).
-    *   `ECDHProtocol` ise 256-bitlik bir skaler çarpım yapar (`scalar_multiply`).
-    *   Bir sonraki aşamada (Measure Phase), bu bit farkının (2048 vs 256) işlemci sürelerine nasıl yansıdığını ölçeceğiz.
-"""
-
-class DiffieHellmanProtocol:
-    """
-    Klasik Diffie-Hellman (DH) Protokolü.
-    Hem Ephemeral (DHE) hem de Static DH senaryolarını destekler.
-    """
-
-    def __init__(self, p: int, g: int, private_key: Optional[int] = None):
-        """
-        :param p: Asal modül (Prime modulus)
-        :param g: Üreteç (Generator)
-        :param private_key: Eğer verilirse 'Static DH' olur, verilmezse rastgele üretilir (Ephemeral).
-        """
-        self.p = p
-        self.g = g
-
-        # Eğer özel anahtar verilmediyse, kriptografik olarak güvenli rastgele bir sayı üret (Ephemeral)
-        # Aralık: [2, p-2]
-        if private_key is None:
-            self._private_key = 2 + secrets.randbelow(p - 3)
-            self.is_ephemeral = True
-        else:
-            self._private_key = private_key
-            self.is_ephemeral = False
-
-        # Public Key Hesaplama: A = g^a mod p
-        # Kendi yazdığımız Square-and-Multiply algoritmasını kullanıyoruz.
-        self.public_key = ModularArithmetic.square_and_multiply(self.g, self._private_key, self.p)
-
-    def generate_shared_secret(self, other_public_key: int) -> int:
-        """
-        Karşı tarafın Public Key'ini (B) kullanarak ortak sırrı hesaplar.
-        S = B^a mod p
-        """
-        # Güvenlik Kontrolü: Gelen anahtarın 1 veya p-1 olup olmadığı kontrol edilmeli (Small Subgroup Attack)
-        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive burak" kullanacağız.
-        # Bu sınıf güvenli versiyonu temsil etsin:
-        if other_public_key <= 1 or other_public_key >= self.p - 1:
-            raise ValueError("Gecersiz Public Key! (Small Subgroup Saldirisi Riski)")
-
-        shared_secret = ModularArithmetic.square_and_multiply(other_public_key, self._private_key, self.p)
-        return shared_secret
-
-
-class ECDHProtocol:
-    """
-    Elliptic Curve Diffie-Hellman (ECDH) Protokolü.
-    Daha küçük anahtar boyutlarıyla aynı güvenlik seviyesini sağlar.
-    """
-
-    def __init__(self, curve: EllipticCurve, G: Point, order_n: int, private_key: Optional[int] = None):
-        """
-        :param curve: EllipticCurve sınıfı örneği (y^2 = x^3 + ax + b)
-        :param G: Başlangıç noktası (Generator Point)
-        :param order_n: G noktasının mertebesi (Order of subgroup)
-        :param private_key: Opsiyonel statik anahtar.
-        """
-        self.curve = curve
-        self.G = G
-        self.n = order_n
-
-        # Private Key (d): [1, n-1] aralığında rastgele bir tam sayı
-        if private_key is None:
-            self._private_key = 1 + secrets.randbelow(self.n - 1)
-            self.is_ephemeral = True
-        else:
-            self._private_key = private_key
-            self.is_ephemeral = False
-
-        # Public Key (Q): Q = d * G
-        # Kendi yazdığımız Double-and-Add algoritmasını kullanıyoruz.
-        self.public_key = self.curve.scalar_multiply(self._private_key, self.G)
-
-    def generate_shared_secret(self, other_public_key: Point) -> int:
-        """
-        Karşı tarafın Public Key'ini (Q_other) kullanarak ortak sırrı hesaplar.
-        S_point = d * Q_other
-        Shared Secret = S_point.x (Sadece x koordinatı kullanılır)
-        """
-        if other_public_key is None:
-            raise ValueError("Gecersiz Public Key (Sonsuzdaki Nokta)!")
-
-        # S = d * Q_other
-        shared_point = self.curve.scalar_multiply(self._private_key, other_public_key)
-
-        if shared_point is None:
-            raise ValueError("Ortak sır Sonsuzdaki Nokta çıktı! (Kritik Hata)")
-
-        # ECDH standartlarında genellikle sonucun x koordinatı ortak sır olarak alınır.
-        return shared_point[0]
-```
 
 ## File: references/Authenticated Key Exchange Provably Secure against the MiTM Attack.md
 ```markdown
@@ -2008,26 +1450,6 @@ Let’s focus on the server part. Enabling `DHE-RSA-AES128-SHA` cipher suite hin
 Your mileage may vary but the computational cost for enabling perfect forward secrecy with an ECDHE cipher suite seems a small sacrifice for better security.
 ```
 
-## File: Dockerfile
-```dockerfile
-# Base image: Python 3.9 (Slim version for lighter footprint)
-FROM python:3.9-slim
-
-# Çalışma dizinini ayarla
-WORKDIR /app
-
-# Kodları konteynera kopyala
-COPY crypto_engine /app/crypto_engine
-COPY benchmark_suite /app/benchmark_suite
-# (İleride attack_lab de eklenecek)
-
-# Bağımlılık yok (No pip install needed for pure math implementation!)
-# Ancak ileride grafik çizmek gerekirse matplotlib eklenebilir.
-
-# Benchmark scriptini çalıştır
-CMD ["python", "-m", "benchmark_suite.benchmark"]
-```
-
 ## File: Implementation-Plan-Task-Lists.md
 ```markdown
 ## Project Implementation Plan
@@ -2087,29 +1509,29 @@ To transition from a theoretical simulation to a **technical demonstration** by 
 *Goal: Address the critique "How did you come to that conclusion?" regarding efficiency using reproducible experiments.*
 
 ### **A. Experimental Environment (Docker)**
-* [ ] **Create `Dockerfile`:**
+* [x] **Create `Dockerfile`:**
 * Base Image: `python:3.9-slim`
 * Purpose: Ensures the teacher can replicate exact results.
 
-* [ ] **Resource Constraints (The "Ad Hoc Network" Sim):**
+* [x] **Resource Constraints (The "Ad Hoc Network" Sim):**
 * 
-**Scenario A (IoT Node):** Run with `docker run --cpus="0.5" --memory="128m"` to simulate limited hardware.
+* **Scenario A (IoT Node):** Run with `docker run --cpus="0.5" --memory="128m"` to simulate limited hardware.
 
 * **Scenario B (Standard Server):** Run with `docker run --cpus="2.0" --memory="1g"`.
 
 
 ### **B. The Benchmark Script**
-* [ ] Define Security Equivalences:
+* [x] Define Security Equivalences:
 * **Test 1:** DH-2048 vs. ECDH-224 (112-bit security).
 * **Test 2:** DH-3072 vs. ECDH-256 (128-bit security).
 
 
-* [ ] **Metrics to Record:**
+* [x] **Metrics to Record:**
 * **Wall-clock Time:** Time taken to generate Key Pair + Compute Shared Secret.
 * **Bandwidth:** Size of Public Key (A vs. Point P) in bytes.
 
 
-* [ ] **Output:** Generate CSV data to produce a bar chart showing DH latency growing exponentially while ECDH remains linear.
+* [x] **Output:** Generate CSV data to produce a bar chart showing DH latency growing exponentially while ECDH remains linear.
 
 ---
 
@@ -2165,19 +1587,1452 @@ To transition from a theoretical simulation to a **technical demonstration** by 
 * **[4] Diffie-Hellman:** *Authenticated Key Exchange Provably Secure against the MiTM Attack* (Ann & Peter)
 ```
 
+## File: attack_lab/forward_secrecy.py
+```python
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from crypto_engine.protocols import DiffieHellmanProtocol
+from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
+from attack_lab.utils import *
+
+
+def run_forward_secrecy_demo():
+    log_title("SCENARIO A: Forward Secrecy Analysis")
+
+    # ==========================================
+    # PART 1: THE STATIC KEY DISASTER
+    # ==========================================
+    print(f"{Colors.BOLD}--- Simulation 1: Static DH (No Forward Secrecy) ---{Colors.RESET}")
+
+    # 1. Setup Static Server (burak uses Long Term Key)
+    burak_static = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+    log_actor("Server(burak)", "Initialized with STATIC Private Key", f"Key: {str(burak_static._private_key)[:10]}...")
+
+    # 2. Simulate Past Traffic (Session 1 - Yesterday)
+    arda_v1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)  # arda is ephemeral
+
+    # Handshake
+    s1_secret = burak_static.generate_shared_secret(arda_v1.public_key)
+    s1_msg = "My password is 'hunter2'"
+    s1_cipher = simple_xor_encrypt(s1_msg, s1_secret)
+
+    log_actor("arda", "Sent Encrypted Msg (Session 1)", f"Ciphertext: {s1_cipher.hex()[:20]}...", Colors.BLUE)
+
+    # 3. Simulate Traffic (Session 2 - Today)
+    arda_v2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+
+    # Handshake
+    s2_secret = burak_static.generate_shared_secret(arda_v2.public_key)
+    s2_msg = "Attack at dawn"
+    s2_cipher = simple_xor_encrypt(s2_msg, s2_secret)
+
+    log_actor("arda", "Sent Encrypted Msg (Session 2)", f"Ciphertext: {s2_cipher.hex()[:20]}...", Colors.BLUE)
+
+    # 4. THE LEAK (Mallory hacks the server TODAY)
+    leaked_private_key = burak_static._private_key
+    log_attack("SERVER COMPROMISED!", f"Leaked Key: {str(leaked_private_key)[:10]}...")
+
+    # 5. The Exploit (Time Travel)
+    # Mallory uses the key stolen TODAY to decrypt Session 1 (YESTERDAY)
+    print(f"\n{Colors.RED}Mallory attempts to decrypt PAST Session 1 logs...{Colors.RESET}")
+
+    # Mallory reconstructs the secret: (arda_Public_V1 ^ Leaked_burak_Priv) % P
+    mallory_s1_calc = pow(arda_v1.public_key, leaked_private_key, DH_2048_P)
+    decrypted_s1 = simple_xor_decrypt(s1_cipher, mallory_s1_calc)
+
+    if decrypted_s1 == s1_msg:
+        log_attack("DECRYPTION SUCCESSFUL", f"Recovered Past Msg: '{decrypted_s1}'")
+        print(f"{Colors.RED}>> CRITICAL FAILURE: Compromise of current key exposed past data.{Colors.RESET}\n")
+    else:
+        print("Decryption Failed.")
+
+    # ==========================================
+    # PART 2: THE EPHEMERAL FIX (DHE)
+    # ==========================================
+    print(f"{Colors.BOLD}--- Simulation 2: Ephemeral DH (Perfect Forward Secrecy) ---{Colors.RESET}")
+
+    # 1. Session 1 (Yesterday) - burak uses Ephemeral Key A
+    burak_eph_1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+    arda_eph_1 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+    s1_secret = burak_eph_1.generate_shared_secret(arda_eph_1.public_key)
+    s1_cipher = simple_xor_encrypt("Nuclear Launch Codes: 0000", s1_secret)
+
+    log_actor("System", "Session 1 Complete", "Keys destroyed from memory.", Colors.YELLOW)
+
+    # 2. Session 2 (Today) - burak uses Ephemeral Key B
+    burak_eph_2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)  # NEW KEY!
+    arda_eph_2 = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+    s2_secret = burak_eph_2.generate_shared_secret(arda_eph_2.public_key)
+
+    # 3. THE LEAK (Mallory hacks server TODAY)
+    # She only gets the key currently in memory (Session 2's key)
+    leaked_key_today = burak_eph_2._private_key
+    log_attack("SERVER COMPROMISED!", f"Leaked Key (Session 2): {str(leaked_key_today)[:10]}...")
+
+    # 4. The Exploit Attempt
+    print(f"\n{Colors.RED}Mallory attempts to decrypt PAST Session 1 logs...{Colors.RESET}")
+
+    # Mallory tries to use Today's key on Yesterday's traffic
+    mallory_fail_calc = pow(arda_eph_1.public_key, leaked_key_today, DH_2048_P)
+    decrypted_attempt = simple_xor_decrypt(s1_cipher, mallory_fail_calc)
+
+    if decrypted_attempt != "Nuclear Launch Codes: 0000":
+        print(f"{Colors.GREEN}{Colors.BOLD}>> DECRYPTION FAILED!{Colors.RESET}")
+        print(f"   Garbage Output: {decrypted_attempt[:20]}...")
+        log_actor("System", "Forward Secrecy Verified", "Past secrets remain secure.", Colors.GREEN)
+
+
+if __name__ == "__main__":
+    run_forward_secrecy_demo()
+```
+
+## File: attack_lab/subgroup_mitm.py
+```python
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from crypto_engine.protocols import DiffieHellmanProtocol
+from crypto_engine.modular_arithmetic import ModularArithmetic
+from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
+from attack_lab.utils import *
+
+
+class NaiveBurak(DiffieHellmanProtocol):
+    """
+    A Vulnerable Implementation of burak.
+    He forgot to check if the public key is in range [2, p-2].
+    """
+
+    def generate_shared_secret(self, other_public_key: int) -> int:
+        # VULNERABILITY: No check for small subgroup attacks!
+        # Normal code would raise Error if other_public_key == p-1
+
+        # Just compute straight away
+        shared_secret = ModularArithmetic.square_and_multiply(other_public_key, self._private_key, self.p)
+        return shared_secret
+
+
+def run_mitm_demo():
+    log_title("SCENARIO B: Small Subgroup Confinement Attack")
+
+    # 1. Setup
+    p = DH_2048_P
+    g = DH_2048_G
+
+    # Naive burak is initialized
+    burak = NaiveBurak(p, g)
+    log_actor("burak (Naive)", "Waiting for arda's Public Key...", "", Colors.GREEN)
+
+    # 2. Mallory Intercepts
+    log_actor("arda", "Sends Public Key A", "Points to -> burak", Colors.BLUE)
+    log_attack("INTERCEPTION", "Mallory blocks arda's key.")
+
+    # 3. Injection (The Attack)
+    # Mallory sends p-1 (which is -1 mod p). This has Order 2.
+    # The result will be (-1)^b.
+    # If b is even -> 1. If b is odd -> p-1.
+    malicious_key = p - 1
+    log_attack("INJECTION", f"Mallory sends (P - 1) to burak.")
+
+    # 4. burak Computes Shared Secret
+    # burak thinks 'malicious_key' is arda.
+    try:
+        buraks_secret = burak.generate_shared_secret(malicious_key)
+        log_actor("burak (Naive)", "Computes Shared Secret", f"Value: {str(buraks_secret)[:10]}... (Hidden)", Colors.GREEN)
+
+        # burak encrypts sensitive data
+        secret_msg = "Launch Missiles at 12:00"
+        ciphertext = simple_xor_encrypt(secret_msg, buraks_secret)
+        log_actor("burak (Naive)", "Sends Encrypted Data", f"Bytes: {ciphertext.hex()[:20]}...", Colors.GREEN)
+
+    except ValueError as e:
+        print("burak detected the attack! (This shouldn't happen in NaiveBurak)")
+        return
+
+    # 5. Mallory Brute Forces
+    print(f"\n{Colors.RED}Mallory starts Brute Force...{Colors.RESET}")
+    log_actor("Mallory", "Analyzing Subgroup...", "Generator order is 2. Search space size: 2 keys.", Colors.RED)
+
+    # There are only 2 possible secrets: 1 or p-1
+    possible_keys = [1, p - 1]
+
+    for candidate_key in possible_keys:
+        print(f"  Trying Candidate Key: {str(candidate_key)[:10]}...", end=" ")
+
+        # Attempt decrypt
+        decrypted = simple_xor_decrypt(ciphertext, candidate_key)
+
+        # Check if it looks like English text (simple heuristic)
+        if "Missiles" in decrypted:
+            print(f"{Colors.GREEN}[MATCH FOUND]{Colors.RESET}")
+            log_attack("CRACKED", f"Message: '{decrypted}'")
+            print(f"{Colors.RED}>> ATTACK SUCCESS: 2048-bit security reduced to 2 guesses.{Colors.RESET}")
+            break
+        else:
+            print(f"{Colors.YELLOW}[FAIL]{Colors.RESET}")
+
+
+if __name__ == "__main__":
+    run_mitm_demo()
+```
+
+## File: attack_lab/utils.py
+```python
+import sys
+import hashlib
+
+
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'  # arda
+    GREEN = '\033[92m'  # burak
+    RED = '\033[91m'  # Mallory/Attacker
+    YELLOW = '\033[93m'  # System/Info
+    BOLD = '\033[1m'
+    RESET = '\033[0m'
+
+
+def log_title(title):
+    print(f"\n{Colors.HEADER}{Colors.BOLD}=== {title} ==={Colors.RESET}")
+    print(f"{Colors.HEADER}{'=' * (len(title) + 8)}{Colors.RESET}\n")
+
+
+def log_actor(name, action, detail="", color=Colors.RESET):
+    print(f"{color}{Colors.BOLD}[{name}]{Colors.RESET} {action}")
+    if detail:
+        print(f"    {Colors.YELLOW}↳ {detail}{Colors.RESET}")
+
+
+def log_attack(action, result):
+    print(f"{Colors.RED}{Colors.BOLD}[ATTACK]{Colors.RESET} {action}")
+    print(f"    {Colors.RED}↳ RESULT: {result}{Colors.RESET}")
+
+
+def simple_xor_encrypt(message: str, shared_secret_int: int) -> bytes:
+    """
+    A toy encryption for demonstration.
+    Hashes the integer shared secret to get a key, then XORs the message.
+    """
+    # 1. Derive a key from the shared secret integer
+    key_hash = hashlib.sha256(str(shared_secret_int).encode()).digest()
+
+    # 2. XOR encrypt
+    msg_bytes = message.encode()
+    encrypted = bytearray()
+    for i, b in enumerate(msg_bytes):
+        encrypted.append(b ^ key_hash[i % len(key_hash)])
+    return bytes(encrypted)
+
+
+def simple_xor_decrypt(ciphertext: bytes, shared_secret_int: int) -> str:
+    """Decrypts the XOR message."""
+    key_hash = hashlib.sha256(str(shared_secret_int).encode()).digest()
+    decrypted = bytearray()
+    for i, b in enumerate(ciphertext):
+        decrypted.append(b ^ key_hash[i % len(key_hash)])
+    return decrypted.decode('utf-8', errors='ignore')
+```
+
+## File: attack_visualizer/static/script.js
+```javascript
+const socket = io();
+
+// UI Elements
+const packet = document.getElementById('active-packet');
+const logContainer = document.getElementById('log-container');
+const malloryNode = document.getElementById('node-mallory');
+
+// --- Control Functions ---
+function startHandshake(type) {
+    socket.emit('init_handshake', {type: type});
+}
+
+function toggleAttack() {
+    socket.emit('toggle_attack');
+}
+
+function leakKey() {
+    socket.emit('leak_key');
+}
+
+// --- WebSocket Handlers ---
+
+socket.on('log', (data) => {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    const time = new Date().toLocaleTimeString();
+    entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-source">${data.source}:</span> ${data.msg}`;
+    logContainer.prepend(entry);
+});
+
+socket.on('update_mallory', (data) => {
+    if(data.active) {
+        malloryNode.classList.add('active');
+        document.getElementById('status-mallory').innerText = "Mode: INTERCEPTING";
+    } else {
+        malloryNode.classList.remove('active');
+        document.getElementById('status-mallory').innerText = "Mode: Passive";
+    }
+});
+
+socket.on('anim_packet', (data) => {
+    // Show packet
+    packet.style.opacity = '1';
+    packet.innerHTML = `<i class="fas fa-key"></i>`;
+    packet.style.left = '10%'; // Start at arda
+    packet.style.transition = 'none';
+
+    // Trigger Reflow
+    void packet.offsetWidth;
+
+    // Animate
+    packet.style.transition = 'left 2s ease-in-out';
+
+    if (data.intercepted) {
+        // Stop at Mallory
+        packet.style.left = '50%';
+        setTimeout(() => {
+            packet.innerHTML = `<i class="fas fa-skull"></i>`; // Change to malicious
+            packet.style.backgroundColor = '#da3633';
+            packet.style.color = '#fff';
+
+            // Resume to burak after brief pause
+            setTimeout(() => {
+                packet.style.left = '90%';
+                setTimeout(() => {
+                    packet.style.opacity = '0';
+                    socket.emit('complete_handshake'); // Tell server animation is done
+                }, 2000);
+            }, 1000);
+        }, 2000);
+    } else {
+        // Go straight to burak
+        packet.style.left = '90%';
+        setTimeout(() => {
+            packet.style.opacity = '0';
+            socket.emit('complete_handshake');
+        }, 2000);
+    }
+});
+
+socket.on('update_status', (data) => {
+    const el = document.getElementById(`status-${data.actor}`);
+    const keyEl = document.getElementById(`key-${data.actor}`);
+
+    el.innerText = data.status.toUpperCase();
+    keyEl.innerText = `Secret: ${data.secret}`;
+
+    if (data.status === 'compromised') el.style.color = '#da3633';
+    if (data.status === 'secure') el.style.color = '#2ea043';
+});
+
+socket.on('anim_leak', (data) => {
+    const burak = document.getElementById('node-burak');
+    burak.style.boxShadow = "0 0 30px #da3633";
+    setTimeout(() => { burak.style.boxShadow = "none"; }, 500);
+});
+```
+
+## File: attack_visualizer/static/style.css
+```css
+body {
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Consolas', 'Courier New', monospace;
+    margin: 0;
+    padding: 20px;
+}
+
+.header {
+    text-align: center;
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 20px;
+    margin-bottom: 40px;
+}
+
+.highlight { color: #58a6ff; }
+
+.controls button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: white;
+    padding: 10px 20px;
+    margin: 0 5px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.controls button:hover { background: #30363d; }
+.controls .btn-red { border-color: #da3633; color: #da3633; }
+.controls .btn-red:hover { background: #da3633; color: white; }
+.controls .btn-warning { border-color: #d29922; color: #d29922; }
+
+/* NETWORK GRID */
+.network-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: 20px;
+    height: 400px;
+    align-items: center;
+}
+
+.node {
+    background: #161b22;
+    border: 1px solid #30363d;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    position: relative;
+    transition: transform 0.3s;
+}
+
+.node.attacker {
+    border-color: #da3633;
+    opacity: 0.5;
+}
+.node.attacker.active {
+    opacity: 1;
+    box-shadow: 0 0 20px rgba(218, 54, 51, 0.4);
+}
+
+.icon { font-size: 3em; margin-bottom: 10px; }
+#node-arda .icon { color: #58a6ff; }
+#node-burak .icon { color: #2ea043; }
+#node-mallory .icon { color: #da3633; }
+
+.key-display {
+    background: #0d1117;
+    padding: 5px;
+    font-size: 0.8em;
+    color: #8b949e;
+    margin-top: 10px;
+    border-radius: 4px;
+}
+
+/* ANIMATION ELEMENTS */
+.channel-zone {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.wire {
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    height: 2px;
+    background: #30363d;
+    z-index: -1;
+}
+
+.packet {
+    position: absolute;
+    top: 45%;
+    left: 10%; /* Start at arda */
+    background: #ffffff;
+    color: #000;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    opacity: 0; /* Hidden by default */
+    box-shadow: 0 0 10px #fff;
+}
+
+/* LOGS */
+.log-panel {
+    margin-top: 30px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    padding: 15px;
+    height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+}
+.log-entry { margin: 5px 0; border-bottom: 1px solid #21262d; }
+.log-source { font-weight: bold; color: #58a6ff; }
+.log-time { color: #8b949e; font-size: 0.8em; margin-right: 10px; }
+```
+
+## File: attack_visualizer/templates/index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DH Vulnerability Simulator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+<div class="header">
+    <h1>Diffie-Hellman Protocol <span class="highlight">Attack Lab</span></h1>
+    <div class="controls">
+        <button onclick="startHandshake('ephemeral')"><i class="fas fa-sync"></i> Ephemeral Handshake (Secure)</button>
+        <button onclick="startHandshake('static')"><i class="fas fa-lock"></i> Static Handshake (Risky)</button>
+        <button onclick="toggleAttack()" class="btn-red"><i class="fas fa-user-secret"></i> Toggle MitM Attack</button>
+        <button onclick="leakKey()" class="btn-warning"><i class="fas fa-radiation"></i> Leak burak's Key</button>
+    </div>
+</div>
+
+<div class="network-grid">
+    <!-- arda -->
+    <div class="node" id="node-arda">
+        <div class="icon"><i class="fas fa-user-shield"></i></div>
+        <h2>arda</h2>
+        <div class="status-box">Status: <span id="status-arda">Idle</span></div>
+        <div class="key-display" id="key-arda">Shared Secret: ???</div>
+    </div>
+
+    <!-- THE CHANNEL (MALLORY) -->
+    <div class="channel-zone">
+        <div class="wire"></div>
+        <div class="packet" id="active-packet"><i class="fas fa-envelope"></i></div>
+
+        <div class="node attacker" id="node-mallory">
+            <div class="icon"><i class="fas fa-user-secret"></i></div>
+            <h2>Mallory</h2>
+            <div class="status-box" id="status-mallory">Mode: Passive</div>
+            <div class="hack-console" id="hack-console">Waiting for traffic...</div>
+        </div>
+    </div>
+
+    <!-- burak -->
+    <div class="node" id="node-burak">
+        <div class="icon"><i class="fas fa-server"></i></div>
+        <h2>burak</h2>
+        <div class="status-box">Status: <span id="status-burak">Idle</span></div>
+        <div class="key-display" id="key-burak">Shared Secret: ???</div>
+    </div>
+</div>
+
+<div class="log-panel">
+    <h3><i class="fas fa-terminal"></i> Simulation Logs</h3>
+    <div id="log-container"></div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+```
+
+## File: attack_visualizer/app.py
+```python
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from crypto_engine.protocols import DiffieHellmanProtocol
+from benchmark_suite.standard_params import DH_2048_P, DH_2048_G
+
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Simulation State
+STATE = {
+    "arda": None,
+    "burak": None,
+    "mallory_active": False,
+    "messages": []
+}
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@socketio.on('init_handshake')
+def handle_handshake(data):
+    """Scenario: Normal DH Handshake"""
+    scenario_type = data.get('type')  # 'static' or 'ephemeral'
+
+    # 1. arda Generates Key
+    STATE['arda'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+    emit('log', {'source': 'arda', 'msg': f'Generated Private Key: {str(STATE["arda"]._private_key)[:6]}...'})
+    emit('anim_key_gen', {'target': 'arda'})
+
+    # 2. burak Generates Key (Static or New)
+    if scenario_type == 'static' and STATE['burak']:
+        emit('log', {'source': 'burak', 'msg': 'Using STATIC Private Key (No Refresh)'})
+    else:
+        STATE['burak'] = DiffieHellmanProtocol(DH_2048_P, DH_2048_G)
+        emit('log', {'source': 'burak', 'msg': f'Generated Ephemeral Key: {str(STATE["burak"]._private_key)[:6]}...'})
+        emit('anim_key_gen', {'target': 'burak'})
+
+    # 3. Public Key Exchange Animation
+    emit('anim_packet', {
+        'from': 'arda', 'to': 'burak',
+        'payload': f'PubA: {str(STATE["arda"].public_key)[:10]}...',
+        'intercepted': STATE['mallory_active']
+    })
+
+
+@socketio.on('complete_handshake')
+def finalize_handshake():
+    """Calculates shared secrets after animation finishes"""
+    if STATE['mallory_active']:
+        # ATTACK: Subgroup Confinement
+        # Mallory injects P-1
+        p_minus_1 = DH_2048_P - 1
+
+        # burak computes secret using P-1
+        # In a real library this raises an error, here we force it for demo
+        # burak's Secret = (P-1)^b mod P
+        burak_secret = pow(p_minus_1, STATE['burak']._private_key, DH_2048_P)
+
+        emit('log', {'source': 'Mallory', 'msg': 'ATTACK: Injected (P-1) as Public Key!'})
+        emit('log', {'source': 'burak', 'msg': 'Computed Shared Secret (CORRUPTED)'})
+        emit('update_status', {'actor': 'burak', 'status': 'compromised', 'secret': str(burak_secret)})
+        emit('update_status', {'actor': 'mallory', 'status': 'cracked', 'secret': '1 or P-1'})
+
+    else:
+        # Normal DH
+        arda_s = STATE['arda'].generate_shared_secret(STATE['burak'].public_key)
+        burak_s = STATE['burak'].generate_shared_secret(STATE['arda'].public_key)
+
+        emit('log', {'source': 'System', 'msg': 'Handshake Secure. Channel Established.'})
+        emit('update_status', {'actor': 'arda', 'status': 'secure', 'secret': str(arda_s)[:10]})
+        emit('update_status', {'actor': 'burak', 'status': 'secure', 'secret': str(burak_s)[:10]})
+
+
+@socketio.on('toggle_attack')
+def toggle_attack():
+    STATE['mallory_active'] = not STATE['mallory_active']
+    status = "ACTIVE" if STATE['mallory_active'] else "IDLE"
+    emit('log', {'source': 'Mallory', 'msg': f'Interception Mode: {status}'})
+    emit('update_mallory', {'active': STATE['mallory_active']})
+
+
+@socketio.on('leak_key')
+def leak_key():
+    """Forward Secrecy Demo: Leak burak's Key"""
+    if not STATE['burak']: return
+    key = str(STATE['burak']._private_key)
+    emit('log', {'source': 'System', 'msg': f'CRITICAL: burak\'s Key LEAKED: {key[:10]}...'})
+    emit('anim_leak', {'key': key})
+
+
+if __name__ == '__main__':
+    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
+```
+
+## File: attack_visualizer/requirements.txt
+```
+flask==3.1.2
+flask-socketio==5.5.1
+```
+
+## File: benchmark_suite/report_generator.py
+```python
+import json
+import sys
+import datetime
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cryptographic Benchmark: DH vs ECDH</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f4f9; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+        .chart-box { margin-bottom: 40px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Diffie-Hellman vs. ECDHE Performance Analysis</h1>
+    <div class="meta">Generated on: <span id="date"></span> | Environment: Docker Container</div>
+
+    <div class="chart-box">
+        <h3>Execution Time Comparison (Lower is Better)</h3>
+        <canvas id="timeChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Network Payload Efficiency (Lower is Better)</h3>
+        <canvas id="sizeChart"></canvas>
+    </div>
+
+    <h3>Detailed Data</h3>
+    <table id="dataTable">
+        <tr><th>Algorithm</th><th>KeyGen (s)</th><th>Handshake (s)</th><th>Payload (Bytes)</th></tr>
+    </table>
+</div>
+
+<script>
+    const data = DATA_PLACEHOLDER;
+    document.getElementById('date').innerText = new Date().toLocaleString();
+
+    // Populate Table
+    const table = document.getElementById('dataTable');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.algorithm}</td><td>${row.keygen_avg_sec.toFixed(4)}</td><td>${row.handshake_avg_sec.toFixed(4)}</td><td>${row.payload_bytes}</td>`;
+        table.appendChild(tr);
+    });
+
+    // Chart 1: Time
+    new Chart(document.getElementById('timeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [
+                { label: 'Key Generation (s)', data: data.map(d => d.keygen_avg_sec), backgroundColor: '#36a2eb' },
+                { label: 'Handshake (s)', data: data.map(d => d.handshake_avg_sec), backgroundColor: '#ff6384' }
+            ]
+        },
+        options: { scales: { y: { beginAtZero: true, title: {display: true, text: 'Seconds'} } } }
+    });
+
+    // Chart 2: Size
+    new Chart(document.getElementById('sizeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [{ label: 'Public Key Size (Bytes)', data: data.map(d => d.payload_bytes), backgroundColor: '#4bc0c0' }]
+        },
+        options: { indexAxis: 'y' }
+    });
+</script>
+</body>
+</html>
+"""
+
+
+def generate_report(json_data):
+    data = json.loads(json_data)
+    html_content = HTML_TEMPLATE.replace("DATA_PLACEHOLDER", json.dumps(data))
+
+    filename = "crypto_benchmark_report.html"
+    with open(filename, "w") as f:
+        f.write(html_content)
+    print(f"Report generated: {filename}")
+
+
+if __name__ == "__main__":
+    # Read JSON from stdin
+    input_data = sys.stdin.read()
+    generate_report(input_data)
+```
+
+## File: benchmark_suite/standard_params.py
+```python
+"""
+Bu dosya RFC 3526 (DH) ve NIST (ECDH) standart parametrelerini içerir.
+NOT: Hex değerleri okunabilirlik açısından kısaltılmıştır (Placeholder).
+Gerçek bir test için bu değerler tam halleriyle değiştirilmelidir.
+"""
+
+# --- CLASSIC DH PARAMETERS (RFC 3526) ---
+
+# 2048-bit MODP Group (Group 14)
+# P = 2^2048 - 2^1984 - 1 + 2^64 * { [2^1918 pi] + 124476 }
+# https://datatracker.ietf.org/doc/html/rfc3526#section-3
+DH_2048_P_HEX = """
+FFFFFFFF FFFFFFFF C90FDAA2 2168C234 C4C6628B 80DC1CD1
+29024E08 8A67CC74 020BBEA6 3B139B22 514A0879 8E3404DD
+EF9519B3 CD3A431B 302B0A6D F25F1437 4FE1356D 6D51C245
+E485B576 625E7EC6 F44C42E9 A637ED6B 0BFF5CB6 F406B7ED
+EE386BFB 5A899FA5 AE9F2411 7C4B1FE6 49286651 ECE45B3D
+C2007CB8 A163BF05 98DA4836 1C55D39A 69163FA8 FD24CF5F
+83655D23 DCA3AD96 1C62F356 208552BB 9ED52907 7096966D
+670C354E 4ABC9804 F1746C08 CA237327 FFFFFFFF FFFFFFFF
+"""
+DH_2048_P = int(DH_2048_P_HEX.replace(" ", "").replace("\n", ""), 16)
+DH_2048_G = 2
+
+# 3072-bit MODP Group (Group 15)
+# P = 2^3072 - 2^3008 - 1 + 2^64 * { [2^2942 pi] + 1690314 }
+# https://datatracker.ietf.org/doc/html/rfc3526#section-4
+DH_3072_P_HEX = """
+FFFFFFFF FFFFFFFF C90FDAA2 2168C234 C4C6628B 80DC1CD1
+29024E08 8A67CC74 020BBEA6 3B139B22 514A0879 8E3404DD
+EF9519B3 CD3A431B 302B0A6D F25F1437 4FE1356D 6D51C245
+E485B576 625E7EC6 F44C42E9 A637ED6B 0BFF5CB6 F406B7ED
+EE386BFB 5A899FA5 AE9F2411 7C4B1FE6 49286651 ECE45B3D
+C2007CB8 A163BF05 98DA4836 1C55D39A 69163FA8 FD24CF5F
+83655D23 DCA3AD96 1C62F356 208552BB 9ED52907 7096966D
+670C354E 4ABC9804 F1746C08 CA18217C 32905E46 2E36CE3B
+E39E772C 180E8603 9B2783A2 EC07A28F B5C55DF0 6F4C52C9
+DE2BCBF6 95581718 3995497C EA956AE5 15D22618 98FA0510
+15728E5A 8AAAC42D AD33170D 04507A33 A85521AB DF1CBA64
+ECFB8504 58DBEF0A 8AEA7157 5D060C7D B3970F85 A6E1E4C7
+ABF5AE8C DB0933D7 1E8C94E0 4A25619D CEE3D226 1AD2EE6B
+F12FFA06 D98A0864 D8760273 3EC86A64 521F2B18 177B200C
+BBE11757 7A615D6C 770988C0 BAD946E2 08E24FA0 74E5AB31
+43DB5BFC E0FD108E 4B82D120 A93AD2CA FFFFFFFF FFFFFFFF
+"""
+# Test amaçlı dummy değer:
+DH_3072_P = int(DH_3072_P_HEX.replace(" ", "").replace("\n", ""), 16)
+DH_3072_G = 2
+
+
+# --- ECDH PARAMETERS (NIST) ---
+
+# NIST P-256 (secp256r1)
+# https://std.neuromancer.sk/nist/P-256
+# y^2 = x^3 - 3x + b (mod p)
+NIST_P256_PARAMS = {
+    'p': int("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF", 16),
+    'a': int("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFC", 16),
+    'b': int("0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B", 16),
+    'gx': int("0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296", 16),
+    'gy': int("0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5", 16),
+    'n': int("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
+}
+
+# NIST P-384 (secp384r1)
+# https://std.neuromancer.sk/nist/P-384#
+# y^2 = x^3 - 3x + b (mod p)
+NIST_P384_PARAMS = {
+    'p': int("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff", 16),
+    'a': int("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc", 16),
+    'b': int("0xb3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef", 16),
+    'gx': int("0xaa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf", 16),
+    'gy': int("0x3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7", 16),
+    'n': int("0xffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973", 16),
+    'h': int("0x1", 16)
+}
+```
+
+## File: crypto_engine/elliptic_curve.py
+```python
+from typing import Tuple, Optional
+
+"""
+### Teknik Açıklama ("The Why")
+
+Bu kodda uyguladığımız prensipler neden önemli?
+
+1.  **Double-and-Add Algoritması:**
+    Tıpkı Klasik DH'deki *Square-and-Multiply* gibi, bu algoritma da işlemin logaritmik zamanda bitmesini sağlar.
+    *   256-bitlik bir anahtar (k) için, eğer basit toplama yapsaydık ($P+P+P...$) $2^{256}$ işlem gerekirdi. Bu imkansızdır.
+    *   **Double-and-Add** ile sadece yaklaşık **256 tane Point Doubling** ve ortalama **128 tane Point Addition** işlemiyle sonuca ulaşırız. ECDH'yi hızlı ve kullanılabilir kılan budur.
+
+2.  **Modüler Ters (Modular Inverse):**
+    Kodda `(y2 - y1) / (x2 - x1)` işlemi yapmamız gerekiyor. Ancak sonlu cisimlerde (Finite Fields) kesirli sayı yoktur.
+    *   Örnek: Mod 17'de $4/2 = 2$ dir.
+    *   Ancak $4 \times (2^{-1}) \pmod{17}$ olarak hesaplarız.
+    *   `_modular_inverse` fonksiyonumuz, Genişletilmiş Öklid algoritmasını kullanarak bu "bölme" işlemini gerçekleştirir. Bu fonksiyon olmadan eğri üzerinde hareket edemezdik.
+
+3.  **Point at Infinity (`None`):**
+    Normal sayılarda `0` neyse, Elliptik Eğrilerde "Sonsuzdaki Nokta" odur. Birim elemandır. Kodda bunu `None` olarak temsil ettik ve `point_add` fonksiyonunun başında bu durumu (Identity) özel olarak ele aldık.
+"""
+
+# Noktayı temsil etmek için basit bir tip tanımı: (x, y) veya None (Sonsuzdaki Nokta)
+Point = Optional[Tuple[int, int]]
+
+
+class EllipticCurve:
+    """
+    Weierstrass formundaki elliptik eğriler üzerinde işlemleri gerçekleştirir:
+    y^2 = x^3 + ax + b (mod p)
+
+    Kütüphane kullanmadan 'Double-and-Add' algoritmasını uygular.
+    """
+
+    def __init__(self, a: int, b: int, p: int):
+        self.a = a
+        self.b = b
+        self.p = p
+
+    def _modular_inverse(self, n: int) -> int:
+        """
+        Genişletilmiş Öklid Algoritması (Extended Euclidean Algorithm).
+        Mod p'de n'in çarpımsal tersini bulur.
+        Yani: (n * x) % p == 1 olan x'i bulur.
+        Bu işlem, eğim hesaplarken bölme işlemi yerine kullanılır.
+        """
+        if n == 0:
+            raise ValueError("0'ın tersi yoktur (Sıfıra bölme hatası).")
+
+        n = n % self.p
+        original_p = self.p
+        x0, x1 = 0, 1
+
+        if self.p == 1: return 0
+
+        temp_n = n
+        temp_p = self.p
+
+        while temp_n > 1:
+            # Standart öklid algoritması adımları
+            q = temp_n // temp_p
+            temp_n, temp_p = temp_p, temp_n % temp_p
+            x0, x1 = x1 - q * x0, x0
+
+        if x1 < 0:
+            x1 += original_p
+
+        return x1
+
+    def point_add(self, P: Point, Q: Point) -> Point:
+        """
+        İki noktayı toplar: P + Q
+        Geometrik olarak: P ve Q'dan geçen doğrunun eğriyi kestiği 3. noktanın x eksenine göre yansıması.
+        """
+        # 1. Durum: Birim eleman (Sonsuzdaki Nokta - 0) ile toplama
+        if P is None: return Q
+        if Q is None: return P
+
+        x1, y1 = P
+        x2, y2 = Q
+
+        # 2. Durum: Nokta tersi ile toplama (P + (-P) = 0)
+        # Dikey bir doğru oluşur, sonsuza gider.
+        if x1 == x2 and y1 != y2:
+            return None
+
+        # 3. Durum: Nokta kendisiyle toplanıyorsa (P == Q) -> Point Doubling
+        if x1 == x2 and y1 == y2:
+            return self.point_double(P)
+
+        # 4. Durum: Genel Toplama (P != Q)
+        # Eğim (m) = (y2 - y1) / (x2 - x1) mod p
+        # Bölme işlemi modüler ters ile çarpmaya dönüşür.
+        numerator = (y2 - y1) % self.p
+        denominator = (x2 - x1) % self.p
+
+        inv_denom = self._modular_inverse(denominator)
+        slope = (numerator * inv_denom) % self.p
+
+        # Yeni koordinatları hesapla
+        x3 = (slope * slope - x1 - x2) % self.p
+        y3 = (slope * (x1 - x3) - y1) % self.p
+
+        return (x3, y3)
+
+    def point_double(self, P: Point) -> Point:
+        """
+        Bir noktayı kendisiyle toplar: P + P = 2P
+        Geometrik olarak: P noktasındaki teğetin eğimi kullanılır.
+        """
+        if P is None: return None
+
+        x1, y1 = P
+
+        # Eğer y1 = 0 ise teğet dikeydir -> Sonsuz
+        if y1 == 0:
+            return None
+
+        # Eğim (m) = (3x^2 + a) / (2y) mod p
+        numerator = (3 * x1 * x1 + self.a) % self.p
+        denominator = (2 * y1) % self.p
+
+        inv_denom = self._modular_inverse(denominator)
+        slope = (numerator * inv_denom) % self.p
+
+        x3 = (slope * slope - 2 * x1) % self.p
+        y3 = (slope * (x1 - x3) - y1) % self.p
+
+        return (x3, y3)
+
+    def scalar_multiply(self, k: int, P: Point) -> Point:
+        """
+        Hesaplar: k * P (P noktasını k kere kendisiyle topla)
+        Algoritma: Double-and-Add
+        Karmaşıklık: O(log k)
+
+        ECDH'de "Public Key" üretimi ve "Shared Secret" hesaplaması burada yapılır.
+        k: Private Key (Scalar)
+        P: Generator Point
+        Sonuç: Public Key (Point)
+        """
+        result = None  # Başlangıçta 0 (Sonsuzdaki Nokta)
+        addend = P
+
+        # Scalar (k) bit bit işlenir
+        while k > 0:
+            # Eğer son bit 1 ise, mevcut 'addend' değerini sonuca ekle
+            if k & 1:
+                result = self.point_add(result, addend)
+
+            # Addend'i iki katına çıkar (Double)
+            addend = self.point_double(addend)
+
+            # Bir sonraki bite geç
+            k >>= 1
+
+        return result
+```
+
+## File: crypto_engine/modular_arithmetic.py
+```python
+import random
+"""
+### Teknik Açıklama
+
+**Neden `pow()` yerine `square_and_multiply` kullandık?**
+
+Diffie-Hellman güvenliği, Ayrık Logaritma Probleminin (Discrete Logarithm Problem) zorluğuna dayanır: g^a mod p hesaplamak kolaydır, ancak sonuçtan a'yı bulmak zordur.
+
+Eğer a sayısı 2048-bitlik bir sayı ise, değeri yaklaşık 10^617'dir. Eğer bu işlemi "üs kadar çarpma" (naive approach) yaparak hesaplamaya çalışsaydık, evrenin yaşından daha uzun sürerdi.
+
+**Square-and-Multiply**, üssü ikilik tabana çevirerek işlem sayısını sayının bit uzunluğuna (örneğin 2048 adım) indirir.
+*   **Örnek:** 3^5 (mod 100)
+*   Naive: 3 * 3 * 3 * 3 * 3 (4 çarpma)
+*   S&M (5 = 101 binary):
+    1.  Bit '1': Kare + Çarp -> 1^2 * 3 = 3
+    2.  Bit '0': Kare -> 3^2 = 9
+    3.  Bit '1': Kare + Çarp -> 9^2 * 3 = 81 * 3 = 243 ≅ 43 (mod 100)
+*   Büyük sayılarda bu fark devasa performans kazancı sağlar ve DH'yi uygulanabilir kılar.
+"""
+
+class ModularArithmetic:
+    """
+    Klasik Diffie-Hellman (DH) için temel matematiksel operasyonları içerir.
+    Python'ın built-in pow() fonksiyonunu KULLANMAZ.
+    """
+
+    @staticmethod
+    def square_and_multiply(base: int, exponent: int, modulus: int) -> int:
+        """
+        Hesaplar: (base ^ exponent) % modulus
+        Algoritma: Square-and-Multiply
+        Karmaşıklık: O(log exponent) - Büyük sayılarla çalışmak için zorunludur.
+        """
+        if modulus == 1:
+            return 0
+
+        result = 1
+        # Üssü ikilik tabana (binary) çeviriyoruz (örn: 5 -> '101')
+        # '0b' öneki olmadan string olarak alıyoruz
+        binary_exponent = bin(exponent)[2:]
+
+        for bit in binary_exponent:
+            # Adım 1: Square (Kare Al)
+            result = (result * result) % modulus
+
+            # Adım 2: Multiply (Eğer bit 1 ise Çarp)
+            if bit == '1':
+                result = (result * base) % modulus
+
+        return result
+
+    @staticmethod
+    def generate_prime_candidate(length: int) -> int:
+        """
+        Basit bir test amaçlı asal sayı adayı üretir (Miller-Rabin testi eklenebilir).
+        Bu simülasyon için random büyük tek sayılar üretiyoruz.
+        """
+        p = random.getrandbits(length)
+        # Sayının tek sayı olduğundan ve en yüksek bitin 1 olduğundan emin ol
+        p |= (1 << length - 1) | 1
+        return p
+
+    @staticmethod
+    def is_prime(n: int, k: int = 5) -> bool:
+        """
+        Miller-Rabin asallık testi.
+        Büyük sayıların asallığını olasılıksal olarak test eder.
+        """
+        if n == 2 or n == 3: return True
+        if n % 2 == 0: return False
+
+        r, s = 0, n - 1
+        while s % 2 == 0:
+            r += 1
+            s //= 2
+
+        for _ in range(k):
+            a = random.randrange(2, n - 1)
+            x = ModularArithmetic.square_and_multiply(a, s, n)
+            if x == 1 or x == n - 1:
+                continue
+            for _ in range(r - 1):
+                x = ModularArithmetic.square_and_multiply(x, 2, n)
+                if x == n - 1:
+                    break
+            else:
+                return False
+        return True
+
+    @staticmethod
+    def get_safe_prime(length: int) -> int:
+        """
+        Belirtilen bit uzunluğunda bir asal sayı döndürür.
+        Gerçek dünya senaryosu için RFC 3526 grupları kullanılmalıdır,
+        ancak burada matematiksel motoru test ediyoruz.
+        """
+        while True:
+            p = ModularArithmetic.generate_prime_candidate(length)
+            if ModularArithmetic.is_prime(p):
+                return p
+```
+
+## File: .gitignore
+```
+# add default ignores for python projects
+__pycache__/
+*.py[cod]
+.env/
+*.pyo
+*.pyd
+
+
+# add ignores for common IDEs
+.vscode/
+.idea/
+
+# add ignores for macOS
+.DS_Store
+
+# Custom
+Implementation-Plan-Task-Lists.md
+references/
+repomix.config.json
+```
+
+## File: crypto_benchmark_report.html
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cryptographic Benchmark: DH vs ECDH</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f4f9; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+        .chart-box { margin-bottom: 40px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Diffie-Hellman vs. ECDHE Performance Analysis</h1>
+    <div class="meta">Generated on: <span id="date"></span> | Environment: Docker Container</div>
+
+    <div class="chart-box">
+        <h3>Execution Time Comparison (Lower is Better)</h3>
+        <canvas id="timeChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Network Payload Efficiency (Lower is Better)</h3>
+        <canvas id="sizeChart"></canvas>
+    </div>
+
+    <h3>Detailed Data</h3>
+    <table id="dataTable">
+        <tr><th>Algorithm</th><th>KeyGen (s)</th><th>Handshake (s)</th><th>Payload (Bytes)</th></tr>
+    </table>
+</div>
+
+<script>
+    const data = [{"algorithm": "DH-2048", "keygen_avg_sec": 0.025766837593982926, "keygen_std_sec": 0.024113325376813658, "handshake_avg_sec": 0.03153084580262657, "handshake_std_sec": 0.02352587616812542, "payload_bytes": 256}, {"algorithm": "ECDH-256", "keygen_avg_sec": 0.022557516896631567, "keygen_std_sec": 0.0219389698738718, "handshake_avg_sec": 0.026570795802399516, "handshake_std_sec": 0.023815311897021244, "payload_bytes": 64}, {"algorithm": "DH-3072", "keygen_avg_sec": 0.1626172375981696, "keygen_std_sec": 0.025811362160904343, "handshake_avg_sec": 0.25979893340554555, "handshake_std_sec": 0.02675821462616564, "payload_bytes": 384}];
+    document.getElementById('date').innerText = new Date().toLocaleString();
+
+    // Populate Table
+    const table = document.getElementById('dataTable');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.algorithm}</td><td>${row.keygen_avg_sec.toFixed(4)}</td><td>${row.handshake_avg_sec.toFixed(4)}</td><td>${row.payload_bytes}</td>`;
+        table.appendChild(tr);
+    });
+
+    // Chart 1: Time
+    new Chart(document.getElementById('timeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [
+                { label: 'Key Generation (s)', data: data.map(d => d.keygen_avg_sec), backgroundColor: '#36a2eb' },
+                { label: 'Handshake (s)', data: data.map(d => d.handshake_avg_sec), backgroundColor: '#ff6384' }
+            ]
+        },
+        options: { scales: { y: { beginAtZero: true, title: {display: true, text: 'Seconds'} } } }
+    });
+
+    // Chart 2: Size
+    new Chart(document.getElementById('sizeChart'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.algorithm),
+            datasets: [{ label: 'Public Key Size (Bytes)', data: data.map(d => d.payload_bytes), backgroundColor: '#4bc0c0' }]
+        },
+        options: { indexAxis: 'y' }
+    });
+</script>
+</body>
+</html>
+```
+
+## File: Dockerfile
+```dockerfile
+# Base image: Python 3.9 (Slim version for lighter footprint)
+FROM python:3.9-slim
+
+# Çalışma dizinini ayarla
+WORKDIR /app
+
+# Kodları konteynera kopyala
+COPY crypto_engine /app/crypto_engine
+COPY benchmark_suite /app/benchmark_suite
+# (İleride attack_lab de eklenecek)
+
+# Bağımlılık yok (No pip install needed for pure math implementation!)
+# Ancak ileride grafik çizmek gerekirse matplotlib eklenebilir.
+
+# Benchmark scriptini çalıştır
+CMD ["python", "-m", "benchmark_suite.benchmark"]
+```
+
+## File: benchmark_suite/benchmark.py
+```python
+# File: benchmark_suite/benchmark.py
+import time
+import sys
+import os
+import json
+import statistics
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from crypto_engine.protocols import DiffieHellmanProtocol, ECDHProtocol
+from crypto_engine.elliptic_curve import EllipticCurve
+import benchmark_suite.standard_params as params
+
+
+def measure_execution(func, iterations=10):
+    """Executes a function multiple times and returns mean and stdev."""
+    times = []
+    for _ in range(iterations):
+        start = time.perf_counter()
+        func()
+        end = time.perf_counter()
+        times.append(end - start)
+
+    return statistics.mean(times), statistics.stdev(times)
+
+
+def run_suite():
+    results = []
+
+    print("--- Başlatılıyor: Kriptografik Performans Ölçümü ---", file=sys.stderr)
+
+    # --- Test 1: DH-2048 (Group 14) ---
+    def dh_2048_keygen():
+        return DiffieHellmanProtocol(params.DH_2048_P, params.DH_2048_G)
+
+    # Pre-generate arda for Handshake test
+    arda_dh_2048 = dh_2048_keygen()
+    burak_dh_2048_pub = dh_2048_keygen().public_key
+
+    def dh_2048_handshake():
+        arda_dh_2048.generate_shared_secret(burak_dh_2048_pub)
+
+    # --- Test 2: ECDH-256 (NIST P-256) ---
+    # Equivalent to 3072-bit RSA/DH security (approx 128-bit security level)
+    curve_256 = EllipticCurve(params.NIST_P256_PARAMS['a'], params.NIST_P256_PARAMS['b'], params.NIST_P256_PARAMS['p'])
+    G_256 = (params.NIST_P256_PARAMS['gx'], params.NIST_P256_PARAMS['gy'])
+    n_256 = params.NIST_P256_PARAMS['n']
+
+    def ecdh_256_keygen():
+        return ECDHProtocol(curve_256, G_256, n_256)
+
+    arda_ecdh_256 = ecdh_256_keygen()
+    burak_ecdh_256_pub = ecdh_256_keygen().public_key
+
+    def ecdh_256_handshake():
+        arda_ecdh_256.generate_shared_secret(burak_ecdh_256_pub)
+
+    # --- Test 3: DH-3072 (Group 15) ---
+    def dh_3072_keygen():
+        return DiffieHellmanProtocol(params.DH_3072_P, params.DH_3072_G)
+
+    arda_dh_3072 = dh_3072_keygen()
+    burak_dh_3072_pub = dh_3072_keygen().public_key
+
+    def dh_3072_handshake():
+        arda_dh_3072.generate_shared_secret(burak_dh_3072_pub)
+
+    # --- Execution & Collection ---
+    scenarios = [
+        ("DH-2048", dh_2048_keygen, dh_2048_handshake, 2048 / 8),
+        ("ECDH-256", ecdh_256_keygen, ecdh_256_handshake, 256 / 8 * 2),  # Approx point size
+        ("DH-3072", dh_3072_keygen, dh_3072_handshake, 3072 / 8),
+    ]
+
+    for name, keygen_func, handshake_func, size_bytes in scenarios:
+        print(f"Benchmarking {name}...", file=sys.stderr)
+        kg_mean, kg_std = measure_execution(keygen_func)
+        hs_mean, hs_std = measure_execution(handshake_func)
+
+        results.append({
+            "algorithm": name,
+            "keygen_avg_sec": kg_mean,
+            "keygen_std_sec": kg_std,
+            "handshake_avg_sec": hs_mean,
+            "handshake_std_sec": hs_std,
+            "payload_bytes": int(size_bytes)
+        })
+
+    # Dump JSON to stdout for piping
+    print(json.dumps(results, indent=2))
+
+
+if __name__ == "__main__":
+    run_suite()
+```
+
+## File: crypto_engine/protocols.py
+```python
+import secrets
+from typing import Optional, Tuple
+from .modular_arithmetic import ModularArithmetic
+from .elliptic_curve import EllipticCurve, Point
+
+"""
+### Teknik Açıklama ("The Why")
+
+1.  **Ephemeral vs. Static:**
+    *   Sınıflarımızda `private_key` parametresi opsiyoneldir.
+    *   Eğer boş bırakılırsa (`None`), `secrets.randbelow()` kullanılarak her seferinde yeni bir anahtar üretilir. Bu **Ephemeral (Geçici)** anahtar değişimidir ve **Forward Secrecy (İleriye Dönük Gizlilik)** sağlar. Yani bir saldırgan gelecekte sunucuyu hacklese bile, geçmişte üretilen bu rastgele anahtarları bulamaz (çünkü silinmiştir).
+    *   Eğer bir `private_key` verilirse, bu **Static** anahtar değişimidir. 3. Aşamada (Break Phase), statik anahtar kullanan bir sistemin geçmiş mesajlarının nasıl çözüldüğünü göstereceğiz.
+
+2.  **Güvenlik Kontrolleri:**
+    *   `DiffieHellmanProtocol` içinde `if other_public_key <= 1...` kontrolü ekledik. Bu, **Small Subgroup Confinement Attack** (Küçük Alt Grup Hapsetme Saldırısı) önlemidir. Saldırganın araya girip `1` veya `p-1` göndererek ortak sırrı tahmin edilebilir (1 veya -1) hale getirmesini engeller.
+    *   3. Aşamada "Saf burak" (Naive burak) karakterini yaratırken bu kontrolleri bilerek kaldıracağız.
+
+3.  **Performans Farkı (Teorik):**
+    *   `DiffieHellmanProtocol` public key üretmek için 2048-bitlik bir üs alma işlemi yapar (`square_and_multiply`).
+    *   `ECDHProtocol` ise 256-bitlik bir skaler çarpım yapar (`scalar_multiply`).
+    *   Bir sonraki aşamada (Measure Phase), bu bit farkının (2048 vs 256) işlemci sürelerine nasıl yansıdığını ölçeceğiz.
+"""
+
+class DiffieHellmanProtocol:
+    """
+    Klasik Diffie-Hellman (DH) Protokolü.
+    Hem Ephemeral (DHE) hem de Static DH senaryolarını destekler.
+    """
+
+    def __init__(self, p: int, g: int, private_key: Optional[int] = None):
+        """
+        :param p: Asal modül (Prime modulus)
+        :param g: Üreteç (Generator)
+        :param private_key: Eğer verilirse 'Static DH' olur, verilmezse rastgele üretilir (Ephemeral).
+        """
+        self.p = p
+        self.g = g
+
+        # Eğer özel anahtar verilmediyse, kriptografik olarak güvenli rastgele bir sayı üret (Ephemeral)
+        # Aralık: [2, p-2]
+        if private_key is None:
+            self._private_key = 2 + secrets.randbelow(p - 3)
+            self.is_ephemeral = True
+        else:
+            self._private_key = private_key
+            self.is_ephemeral = False
+
+        # Public Key Hesaplama: A = g^a mod p
+        # Kendi yazdığımız Square-and-Multiply algoritmasını kullanıyoruz.
+        self.public_key = ModularArithmetic.square_and_multiply(self.g, self._private_key, self.p)
+
+    def generate_shared_secret(self, other_public_key: int) -> int:
+        """
+        Karşı tarafın Public Key'ini (B) kullanarak ortak sırrı hesaplar.
+        S = B^a mod p
+        """
+        # Güvenlik Kontrolü: Gelen anahtarın 1 veya p-1 olup olmadığı kontrol edilmeli (Small Subgroup Attack)
+        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive burak" kullanacağız.
+        # Bu sınıf güvenli versiyonu temsil etsin:
+        if other_public_key <= 1 or other_public_key >= self.p - 1:
+            raise ValueError("Gecersiz Public Key! (Small Subgroup Saldirisi Riski)")
+
+        shared_secret = ModularArithmetic.square_and_multiply(other_public_key, self._private_key, self.p)
+        return shared_secret
+
+
+class ECDHProtocol:
+    """
+    Elliptic Curve Diffie-Hellman (ECDH) Protokolü.
+    Daha küçük anahtar boyutlarıyla aynı güvenlik seviyesini sağlar.
+    """
+
+    def __init__(self, curve: EllipticCurve, G: Point, order_n: int, private_key: Optional[int] = None):
+        """
+        :param curve: EllipticCurve sınıfı örneği (y^2 = x^3 + ax + b)
+        :param G: Başlangıç noktası (Generator Point)
+        :param order_n: G noktasının mertebesi (Order of subgroup)
+        :param private_key: Opsiyonel statik anahtar.
+        """
+        self.curve = curve
+        self.G = G
+        self.n = order_n
+
+        # Private Key (d): [1, n-1] aralığında rastgele bir tam sayı
+        if private_key is None:
+            self._private_key = 1 + secrets.randbelow(self.n - 1)
+            self.is_ephemeral = True
+        else:
+            self._private_key = private_key
+            self.is_ephemeral = False
+
+        # Public Key (Q): Q = d * G
+        # Kendi yazdığımız Double-and-Add algoritmasını kullanıyoruz.
+        self.public_key = self.curve.scalar_multiply(self._private_key, self.G)
+
+    def generate_shared_secret(self, other_public_key: Point) -> int:
+        """
+        Karşı tarafın Public Key'ini (Q_other) kullanarak ortak sırrı hesaplar.
+        S_point = d * Q_other
+        Shared Secret = S_point.x (Sadece x koordinatı kullanılır)
+        """
+        if other_public_key is None:
+            raise ValueError("Gecersiz Public Key (Sonsuzdaki Nokta)!")
+
+        # S = d * Q_other
+        shared_point = self.curve.scalar_multiply(self._private_key, other_public_key)
+
+        if shared_point is None:
+            raise ValueError("Ortak sır Sonsuzdaki Nokta çıktı! (Kritik Hata)")
+
+        # ECDH standartlarında genellikle sonucun x koordinatı ortak sır olarak alınır.
+        return shared_point[0]
+```
+
 ## File: Makefile
 ```
-.PHONY: build run-iot-benchmark run-server-benchmark
+.PHONY: build benchmark-iot benchmark-server
 
 build:
-	@echo "Docker imajı oluşturuluyor..."
+	@echo "Building Crypto Workbench..."
 	docker build -t crypto-bench .
 
-run-iot-benchmark:
-	@echo "IoT Benchmark'ı çalıştıriliyor..."
-	docker run --cpus="0.5" --memory="128m" --rm crypto-bench
+# Runs benchmark inside limited container, pipes JSON to local report generator
+benchmark-iot:
+	@echo "Running Simulation: IoT / Ad-Hoc Network Node (Low CPU)..."
+	docker run --rm --cpus="0.5" --memory="128m" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
+	@echo "Opening Report..."
+	# Linux/Mac için open/xdg-open, Windows için start kullanılabilir
+	# open crypto_benchmark_report.html
 
-run-server-benchmark:
-	@echo "Genel Server Benchmark'ı çalıştıriliyor..."
-	docker run --rm crypto-bench --cpus="2.0" --memory="1g"
+benchmark-server:
+	@echo "Running Simulation: High Performance Server..."
+	docker run --rm --cpus="2.0" --memory="1g" crypto-bench python -m benchmark_suite.benchmark | python3 benchmark_suite/report_generator.py
 ```
