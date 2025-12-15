@@ -23,44 +23,36 @@ from .elliptic_curve import EllipticCurve, Point
 
 class DiffieHellmanProtocol:
     """
-    Klasik Diffie-Hellman (DH) Protokolü.
-    Hem Ephemeral (DHE) hem de Static DH senaryolarını destekler.
+    Classic Diffie-Hellman (DH) Protocol.
+    Supports both Ephemeral (DHE) and Static DH scenarios.
     """
 
     def __init__(self, p: int, g: int, private_key: Optional[int] = None):
-        """
-        :param p: Asal modül (Prime modulus)
-        :param g: Üreteç (Generator)
-        :param private_key: Eğer verilirse 'Static DH' olur, verilmezse rastgele üretilir (Ephemeral).
-        """
         self.p = p
         self.g = g
 
-        # Eğer özel anahtar verilmediyse, kriptografik olarak güvenli rastgele bir sayı üret (Ephemeral)
-        # Aralık: [2, p-2]
         if private_key is None:
+            # Ephemeral: Generate random private key in [2, p-2]
             self._private_key = 2 + secrets.randbelow(p - 3)
             self.is_ephemeral = True
         else:
+            # Static
             self._private_key = private_key
             self.is_ephemeral = False
 
-        # Public Key Hesaplama: A = g^a mod p
-        # Kendi yazdığımız Square-and-Multiply algoritmasını kullanıyoruz.
-        self.public_key = ModularArithmetic.square_and_multiply(self.g, self._private_key, self.p)
+        # Calculate Public Key: A = g^a mod p
+        # Updated to use native pow() via wrapper
+        self.public_key = ModularArithmetic.exponentiate(self.g, self._private_key, self.p)
 
     def generate_shared_secret(self, other_public_key: int) -> int:
         """
-        Karşı tarafın Public Key'ini (B) kullanarak ortak sırrı hesaplar.
-        S = B^a mod p
+        Calculates Shared Secret: S = B^a mod p
         """
-        # Güvenlik Kontrolü: Gelen anahtarın 1 veya p-1 olup olmadığı kontrol edilmeli (Small Subgroup Attack)
-        # Ancak "Break" aşamasında bu kontrolü bilerek yapmayan "Naive burak" kullanacağız.
-        # Bu sınıf güvenli versiyonu temsil etsin:
+        # Security Check: Small Subgroup Attack Prevention
         if other_public_key <= 1 or other_public_key >= self.p - 1:
-            raise ValueError("Gecersiz Public Key! (Small Subgroup Saldirisi Riski)")
+            raise ValueError("Invalid Public Key! (Small Subgroup Risk)")
 
-        shared_secret = ModularArithmetic.square_and_multiply(other_public_key, self._private_key, self.p)
+        shared_secret = ModularArithmetic.exponentiate(other_public_key, self._private_key, self.p)
         return shared_secret
 
 
